@@ -448,11 +448,10 @@ color: white;}
     import { getDatabase, ref, get, set, push, onValue, update, remove } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
 
     // --- CONFIGURATION ---
-    const MeraKamara = [
+    const GITHUB_ACCOUNTS = [
         { owner: 'HarshPahal', token: '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' },
-        { owner: 'Harsh-Kumar-Pahal', token: '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' },
     ];
-    const GuptDwarKiChabi = 'YOUR_SUPER_STRONG_AND_SECRET_KEY_GOES_HERE'; 
+    const SECRET_ENCRYPTION_KEY = 'YOUR_SUPER_STRONG_AND_SECRET_KEY_GOES_HERE'; 
     const firebaseConfig = {
         apiKey: "AIzaSyDB_ylrW7hartjCjSAqjjZjUoNSrSX7Et4",
         authDomain: "blogs-a7325.firebaseapp.com",
@@ -463,7 +462,7 @@ color: white;}
         appId: "1:868013133674:web:8ceaa7dfa63ee0d2a0df13",
         measurementId: "G-RJX09FKMMY"
     };
-    const PRIMARY_GITHUB_ACCOUNT = MeraKamara[0];
+    const PRIMARY_GITHUB_ACCOUNT = GITHUB_ACCOUNTS[0];
     const MAIN_REPO_BASE_NAME = 'secure-file-vault';
     const CENTER_INDEX_FILE = 'centerIndex.json';
     const REPO_SIZE_LIMIT_GB = 95;
@@ -618,16 +617,16 @@ color: white;}
     // ======================== GITHUB VAULT LOGIC ========================
     async function githubApi(path, method = 'GET', body = null, token) {if (!token) throw new Error("API call requires a token.");const url = `https://api.github.com${path}`;const headers = { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github.v3+json' };const options = { method, headers, cache: 'no-cache' };if (body) options.body = JSON.stringify(body);const res = await fetch(url, options);if (!res.ok) {if (res.status === 404) return { data: null, status: 404 };if (res.status === 422) return { data: null, status: 422 };if (res.status === 409) { const error = await res.json().catch(() => ({ message: res.statusText })); throw new Error(`Conflict (409): ${error.message || 'Stale data'}`); }const error = await res.json().catch(() => ({ message: res.statusText }));throw new Error(`${method} ${path} → ${res.status}: ${error.message || 'Unknown error'}`);}if ([201, 204].includes(res.status)) return { data: await res.json().catch(() => null), status: res.status };return { data: await res.json(), status: res.status };}
     async function getJsonFile(owner, repo, path, token) {const { data, status } = await githubApi(`/repos/${owner}/${repo}/contents/${path}`, 'GET', null, token);if (status === 404) return { content: null, sha: null };return { content: JSON.parse(atob(data.content)), sha: data.sha };}
-    async function provisionGitHubVaultForNewUser(user) { const { content: centralIndex, sha: indexSha } = await getJsonFile(PRIMARY_GITHUB_ACCOUNT.owner, MAIN_REPO_BASE_NAME, CENTER_INDEX_FILE, PRIMARY_GITHUB_ACCOUNT.token); const users = centralIndex || {}; if (users[user.email]) { return; } const accountIndex = Math.floor(Math.random() * MeraKamara.length); const chosenAccount = MeraKamara[accountIndex]; const firstRepoName = `${MAIN_REPO_BASE_NAME}-${user.uid.substring(0, 8)}-1`; await githubApi('/user/repos', 'POST', { name: firstRepoName, private: true }, chosenAccount.token); users[user.email] = { repositories: [{ owner: chosenAccount.owner, name: firstRepoName, accountIndex: accountIndex }] }; const b64content = btoa(JSON.stringify(users, null, 2)); const message = `feat: Register new user ${user.email}`; await githubApi(`/repos/${PRIMARY_GITHUB_ACCOUNT.owner}/${MAIN_REPO_BASE_NAME}/contents/${CENTER_INDEX_FILE}`, 'PUT', { message, content: b64content, sha: indexSha }, PRIMARY_GITHUB_ACCOUNT.token); await githubApi(`/repos/${chosenAccount.owner}/${firstRepoName}/contents/${user.email}/.gitkeep`, 'PUT', { message: `chore: Create initial folder for ${user.email}`, content: btoa("p") }, chosenAccount.token); }
+    async function provisionGitHubVaultForNewUser(user) { const { content: centralIndex, sha: indexSha } = await getJsonFile(PRIMARY_GITHUB_ACCOUNT.owner, MAIN_REPO_BASE_NAME, CENTER_INDEX_FILE, PRIMARY_GITHUB_ACCOUNT.token); const users = centralIndex || {}; if (users[user.email]) { return; } const accountIndex = Math.floor(Math.random() * GITHUB_ACCOUNTS.length); const chosenAccount = GITHUB_ACCOUNTS[accountIndex]; const firstRepoName = `${MAIN_REPO_BASE_NAME}-${user.uid.substring(0, 8)}-1`; await githubApi('/user/repos', 'POST', { name: firstRepoName, private: true }, chosenAccount.token); users[user.email] = { repositories: [{ owner: chosenAccount.owner, name: firstRepoName, accountIndex: accountIndex }] }; const b64content = btoa(JSON.stringify(users, null, 2)); const message = `feat: Register new user ${user.email}`; await githubApi(`/repos/${PRIMARY_GITHUB_ACCOUNT.owner}/${MAIN_REPO_BASE_NAME}/contents/${CENTER_INDEX_FILE}`, 'PUT', { message, content: b64content, sha: indexSha }, PRIMARY_GITHUB_ACCOUNT.token); await githubApi(`/repos/${chosenAccount.owner}/${firstRepoName}/contents/${user.email}/.gitkeep`, 'PUT', { message: `chore: Create initial folder for ${user.email}`, content: btoa("p") }, chosenAccount.token); }
     async function loadUserVaultData(user) {const { content: users } = await getJsonFile(PRIMARY_GITHUB_ACCOUNT.owner, MAIN_REPO_BASE_NAME, CENTER_INDEX_FILE, PRIMARY_GITHUB_ACCOUNT.token);return users ? users[user.email] : null;}
-    async function getActiveRepoForUpload() { if (!currentUser || !currentUser.vaultInfo) throw new Error("User vault not loaded."); const lastRepoInfo = currentUser.vaultInfo.repositories[currentUser.vaultInfo.repositories.length - 1]; const { owner, name, accountIndex } = lastRepoInfo; const token = MeraKamara[accountIndex].token; const { data: repoData } = await githubApi(`/repos/${owner}/${name}`, 'GET', null, token); const currentSizeGB = repoData.size / (1024 * 1024); if (currentSizeGB < REPO_SIZE_LIMIT_GB) return lastRepoInfo; const newAccountIndex = Math.floor(Math.random() * MeraKamara.length); const newAccount = MeraKamara[newAccountIndex]; const newRepoNumber = currentUser.vaultInfo.repositories.length + 1; const newRepoName = `${MAIN_REPO_BASE_NAME}-${currentUser.uid.substring(0, 8)}-${newRepoNumber}`; await githubApi('/user/repos', 'POST', { name: newRepoName, private: true }, newAccount.token); const newRepoObject = { owner: newAccount.owner, name: newRepoName, accountIndex: newAccountIndex }; const { content: centralIndex, sha: indexSha } = await getJsonFile(PRIMARY_GITHUB_ACCOUNT.owner, MAIN_REPO_BASE_NAME, CENTER_INDEX_FILE, PRIMARY_GITHUB_ACCOUNT.token); centralIndex[currentUser.email].repositories.push(newRepoObject); const b64content = btoa(JSON.stringify(centralIndex, null, 2)); await githubApi(`/repos/${PRIMARY_GITHUB_ACCOUNT.owner}/${MAIN_REPO_BASE_NAME}/contents/${CENTER_INDEX_FILE}`, 'PUT', { message: `feat: Span repo for user ${currentUser.email}`, content: b64content, sha: indexSha }, PRIMARY_GITHUB_ACCOUNT.token); await githubApi(`/repos/${newAccount.owner}/${newRepoName}/contents/${currentUser.email}/.gitkeep`, 'PUT', { message: `chore: Create initial folder`, content: btoa("p") }, newAccount.token); currentUser.vaultInfo.repositories.push(newRepoObject); return newRepoObject; }
+    async function getActiveRepoForUpload() { if (!currentUser || !currentUser.vaultInfo) throw new Error("User vault not loaded."); const lastRepoInfo = currentUser.vaultInfo.repositories[currentUser.vaultInfo.repositories.length - 1]; const { owner, name, accountIndex } = lastRepoInfo; const token = GITHUB_ACCOUNTS[accountIndex].token; const { data: repoData } = await githubApi(`/repos/${owner}/${name}`, 'GET', null, token); const currentSizeGB = repoData.size / (1024 * 1024); if (currentSizeGB < REPO_SIZE_LIMIT_GB) return lastRepoInfo; const newAccountIndex = Math.floor(Math.random() * GITHUB_ACCOUNTS.length); const newAccount = GITHUB_ACCOUNTS[newAccountIndex]; const newRepoNumber = currentUser.vaultInfo.repositories.length + 1; const newRepoName = `${MAIN_REPO_BASE_NAME}-${currentUser.uid.substring(0, 8)}-${newRepoNumber}`; await githubApi('/user/repos', 'POST', { name: newRepoName, private: true }, newAccount.token); const newRepoObject = { owner: newAccount.owner, name: newRepoName, accountIndex: newAccountIndex }; const { content: centralIndex, sha: indexSha } = await getJsonFile(PRIMARY_GITHUB_ACCOUNT.owner, MAIN_REPO_BASE_NAME, CENTER_INDEX_FILE, PRIMARY_GITHUB_ACCOUNT.token); centralIndex[currentUser.email].repositories.push(newRepoObject); const b64content = btoa(JSON.stringify(centralIndex, null, 2)); await githubApi(`/repos/${PRIMARY_GITHUB_ACCOUNT.owner}/${MAIN_REPO_BASE_NAME}/contents/${CENTER_INDEX_FILE}`, 'PUT', { message: `feat: Span repo for user ${currentUser.email}`, content: b64content, sha: indexSha }, PRIMARY_GITHUB_ACCOUNT.token); await githubApi(`/repos/${newAccount.owner}/${newRepoName}/contents/${currentUser.email}/.gitkeep`, 'PUT', { message: `chore: Create initial folder`, content: btoa("p") }, newAccount.token); currentUser.vaultInfo.repositories.push(newRepoObject); return newRepoObject; }
     
     // --- FOLDER & FILE MANAGEMENT ---
     function getCurrentPath() { return [currentUser.email, ...currentPathStack].join('/'); }
     
     btnBack.onclick = () => { currentPathStack.pop(); updateHeaderUI(); refreshFileList(); };
     btnShowUpload.onclick = () => fileInput.click();
-    fileInput.addEventListener('change', async () => { if (!fileInput.files.length) return; showToast('Starting upload...', 'info'); const file = fileInput.files[0]; const reader = new FileReader(); reader.onload = async () => { try { const targetRepoInfo = await getActiveRepoForUpload(); const { owner, name, accountIndex } = targetRepoInfo; const token = MeraKamara[accountIndex].token; const path = `${getCurrentPath()}/${file.name}`; const content = btoa(CryptoJS.AES.encrypt(reader.result, GuptDwarKiChabi).toString()); await githubApi(`/repos/${owner}/${name}/contents/${path}`, 'PUT', { message: `feat: Add encrypted file ${file.name}`, content }, token); showToast('Upload complete!', 'success'); await refreshFileList(); } catch (e) { showToast(`Upload failed: ${e.message}`, 'error'); } finally { fileInput.value = ''; } }; reader.readAsDataURL(file); });
+    fileInput.addEventListener('change', async () => { if (!fileInput.files.length) return; showToast('Starting upload...', 'info'); const file = fileInput.files[0]; const reader = new FileReader(); reader.onload = async () => { try { const targetRepoInfo = await getActiveRepoForUpload(); const { owner, name, accountIndex } = targetRepoInfo; const token = GITHUB_ACCOUNTS[accountIndex].token; const path = `${getCurrentPath()}/${file.name}`; const content = btoa(CryptoJS.AES.encrypt(reader.result, SECRET_ENCRYPTION_KEY).toString()); await githubApi(`/repos/${owner}/${name}/contents/${path}`, 'PUT', { message: `feat: Add encrypted file ${file.name}`, content }, token); showToast('Upload complete!', 'success'); await refreshFileList(); } catch (e) { showToast(`Upload failed: ${e.message}`, 'error'); } finally { fileInput.value = ''; } }; reader.readAsDataURL(file); });
     
     function updateView() {
         fileListUl.className = (currentView === 'grid') ? 'file-grid' : 'file-list';
@@ -643,7 +642,7 @@ color: white;}
         const path = getCurrentPath();
         for (const repoInfo of currentUser.vaultInfo.repositories) {
             const { owner, name, accountIndex } = repoInfo;
-            const token = MeraKamara[accountIndex].token;
+            const token = GITHUB_ACCOUNTS[accountIndex].token;
             try {
                 const { data: contents } = await githubApi(`/repos/${owner}/${name}/contents/${path}`, 'GET', null, token);
                 if (Array.isArray(contents)) {
@@ -657,7 +656,7 @@ color: white;}
         }
         const metadataPromises = allContents.map(async (item) => {
             if (item.type === 'dir') {
-                const { content } = await getJsonFile(item.repoOwner, item.repoName, `${item.path}/${FOLDER_META_FILENAME}`, MeraKamara[item.accountIndex].token);
+                const { content } = await getJsonFile(item.repoOwner, item.repoName, `${item.path}/${FOLDER_META_FILENAME}`, GITHUB_ACCOUNTS[item.accountIndex].token);
                 // NEW: Read color from metadata, provide null fallback
                 return { ...item, icon: content?.icon || 'fa-solid fa-folder', color: content?.color || null };
             }
@@ -678,7 +677,7 @@ color: white;}
             scannedPaths.add(currentPath);
             for (const repoInfo of currentUser.vaultInfo.repositories) {
                 const { owner, name, accountIndex } = repoInfo;
-                const token = MeraKamara[accountIndex].token;
+                const token = GITHUB_ACCOUNTS[accountIndex].token;
                 try {
                     const { data: contents } = await githubApi(`/repos/${owner}/${name}/contents/${currentPath}`, 'GET', null, token);
                     if (Array.isArray(contents)) {
@@ -790,7 +789,7 @@ color: white;}
         showModal('action-sheet-modal');
     }
 
-    async function fetchAndDecryptFile(fileDataset) { const { path, sha, size, repoOwner, repoName, accountIndex } = fileDataset; const token = MeraKamara[parseInt(accountIndex)].token; let b64content; if (parseInt(size) / (1024 * 1024) > LARGE_FILE_THRESHOLD_MB) { const { data: blob } = await githubApi(`/repos/${repoOwner}/${repoName}/git/blobs/${sha}`, 'GET', null, token); b64content = blob.content; } else { const { data: meta } = await githubApi(`/repos/${repoOwner}/${repoName}/contents/${path}`, 'GET', null, token); b64content = meta.content; } if (!b64content) throw new Error('Could not retrieve file content.'); const decryptedDataUrl = CryptoJS.AES.decrypt(atob(b64content), GuptDwarKiChabi).toString(CryptoJS.enc.Utf8); if (!decryptedDataUrl) throw new Error('Decryption failed.'); return decryptedDataUrl; }
+    async function fetchAndDecryptFile(fileDataset) { const { path, sha, size, repoOwner, repoName, accountIndex } = fileDataset; const token = GITHUB_ACCOUNTS[parseInt(accountIndex)].token; let b64content; if (parseInt(size) / (1024 * 1024) > LARGE_FILE_THRESHOLD_MB) { const { data: blob } = await githubApi(`/repos/${repoOwner}/${repoName}/git/blobs/${sha}`, 'GET', null, token); b64content = blob.content; } else { const { data: meta } = await githubApi(`/repos/${repoOwner}/${repoName}/contents/${path}`, 'GET', null, token); b64content = meta.content; } if (!b64content) throw new Error('Could not retrieve file content.'); const decryptedDataUrl = CryptoJS.AES.decrypt(atob(b64content), SECRET_ENCRYPTION_KEY).toString(CryptoJS.enc.Utf8); if (!decryptedDataUrl) throw new Error('Decryption failed.'); return decryptedDataUrl; }
     
     async function generateAndApplyThumbnail(fileItemElement) {
         const fileData = fileItemElement.dataset;
@@ -871,7 +870,7 @@ color: white;}
         const { path, sha, name, repoOwner, repoName, accountIndex } = fileData;
         if (!confirm(`Are you sure you want to delete file "${name}"?`)) return;
         try {
-            const token = MeraKamara[parseInt(accountIndex)].token;
+            const token = GITHUB_ACCOUNTS[parseInt(accountIndex)].token;
             await githubApi(`/repos/${repoOwner}/${repoName}/contents/${path}`, 'DELETE', { message: `chore: Delete ${name}`, sha }, token);
             showToast(`"${name}" deleted.`, 'info');
             await refreshFileList();
@@ -902,7 +901,7 @@ color: white;}
             for (const [index, item] of allItemsToDelete.entries()) {
                 showToast(`Deleting ${index + 1} of ${totalItems}: ${item.name}`, 'info', { id: progressToastId, duration: 0 });
                 try {
-                    const token = MeraKamara[item.accountIndex].token;
+                    const token = GITHUB_ACCOUNTS[item.accountIndex].token;
                     await githubApi(
                         `/repos/${item.repoOwner}/${item.repoName}/contents/${item.path}`, 
                         'DELETE', 
@@ -938,7 +937,7 @@ color: white;}
         let metaFile = null;
         for (const repoInfo of currentUser.vaultInfo.repositories) {
              const { owner, name: repoName, accountIndex } = repoInfo;
-             const token = MeraKamara[accountIndex].token;
+             const token = GITHUB_ACCOUNTS[accountIndex].token;
              try {
                  const { data } = await githubApi(`/repos/${owner}/${repoName}/contents/${metaFilePath}`, 'GET', null, token);
                  if (data && data.sha) {
@@ -965,7 +964,7 @@ color: white;}
 
             for (const repoInfo of currentUser.vaultInfo.repositories) {
                 const { owner, name, accountIndex } = repoInfo;
-                const token = MeraKamara[accountIndex].token;
+                const token = GITHUB_ACCOUNTS[accountIndex].token;
                 try {
                     const { data: contents } = await githubApi(`/repos/${owner}/${name}/contents/${currentPath}`, 'GET', null, token);
                     if (Array.isArray(contents)) {
@@ -1068,7 +1067,7 @@ color: white;}
         try {
             const targetRepoInfo = await getActiveRepoForUpload();
             const path = `${getCurrentPath()}/${folderName}/${FOLDER_META_FILENAME}`;
-            const token = MeraKamara[targetRepoInfo.accountIndex].token;
+            const token = GITHUB_ACCOUNTS[targetRepoInfo.accountIndex].token;
             const folderColor = newFolderColorInput.value; // Get the chosen color
             const content = btoa(JSON.stringify({ 
                 icon: selectedFolderIcon, 

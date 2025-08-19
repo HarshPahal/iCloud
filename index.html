@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>iCloud</title>
+    <!-- CDNs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- PDF.js Library for robust PDF previews -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <!-- JSZip Library for Folder Downloads -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+    /* --- APPLE-ESQUE UI RESET & DEFAULTS --- */
+    :root {
+        --ios-blue: #007AFF;
+        --ios-light-gray: #F2F2F7;
+        --ios-mid-gray: #E5E5EA;
+        --ios-dark-gray: #8E8E93;
+        --ios-red: #FF3B30;
+        --ios-green: #34C759;
+        --ios-white: #FFFFFF;
+        --ios-black: #000000;
+        --ios-separator: #C6C6C8;
+        --app-bg: var(--ios-light-gray);
+    }
+
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        background-color: var(--app-bg);
+        color: var(--ios-black);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* --- SCREEN MANAGEMENT --- */
+    .screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        transition: opacity 0.3s ease, visibility 0.3s;
+        visibility: hidden;
+        opacity: 0;
+        display: flex;
+        flex-direction: column;
+        background-color: var(--app-bg);
+    }
+    .screen.active {
+        visibility: visible;
+        opacity: 1;
+    }
+    
+    /* --- AUTHENTICATION SCREEN --- */
+    #authScreen {
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+        gap: 20px;
+        background-color: var(--ios-white);
+    }
+    #authScreen .app-logo { font-size: 2.5rem; font-weight: bold; color: var(--ios-blue); margin-bottom: 20px; }
+    #authScreen .auth-form { width: 100%; max-width: 350px; display: flex; flex-direction: column; gap: 12px; }
+    #authScreen h2 { font-size: 1.8rem; font-weight: 600; text-align: center; margin-bottom: 10px; }
+    #authScreen input { width: 100%; padding: 14px 16px; border: 1px solid var(--ios-mid-gray); background-color: var(--ios-light-gray); border-radius: 10px; font-size: 1rem; }
+    #authScreen input:focus { outline: none; border-color: var(--ios-blue); box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2); }
+    #authScreen button { width: 100%; padding: 14px; border-radius: 10px; border: none; font-size: 1rem; font-weight: 600; cursor: pointer; color: var(--ios-white); }
+    #authScreen #btnLogin { background-color: var(--ios-blue); }
+    #authScreen #btnRegister { background-color: var(--ios-green); }
+    #authScreen .auth-link { text-align: center; color: var(--ios-blue); cursor: pointer; font-size: 0.9rem; padding: 8px 0; }
+    #authScreen .auth-error { color: var(--ios-red); text-align: center; font-size: 0.9rem; min-height: 1.2em; }
+    
+    /* --- MAIN APP LAYOUT --- */
+    #appScreen { background-color: var(--ios-white); }
+    .app-header {
+        flex-shrink: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        padding-top: calc(12px + env(safe-area-inset-top));
+        background-color: rgba(247, 247, 247, 0.8);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-bottom: 1px solid var(--ios-separator);
+        z-index: 10;
+    }
+    .app-header .header-left, .app-header .header-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1;
+    }
+    .app-header .header-right { justify-content: flex-end; }
+    .app-header .header-left { justify-content: flex-start; }
+    .app-header .title { font-size: 1.1rem; font-weight: 600; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .app-header .action-icon { font-size: 1.4rem; color: var(--ios-blue); cursor: pointer; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; margin: -10px; }
+    .app-content { flex-grow: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; background-color: var(--app-bg); }
+    .app-view { display: none; }
+    .app-view.active { display: block; }
+    .app-bottom-nav { flex-shrink: 0; display: flex; justify-content: space-around; padding-bottom: env(safe-area-inset-bottom); background-color: rgba(247, 247, 247, 0.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 1px solid var(--ios-separator); z-index: 10; }
+    .nav-item { flex-grow: 1; padding: 8px 0; text-align: center; cursor: pointer; color: var(--ios-dark-gray); display: flex; flex-direction: column; align-items: center; gap: 2px; transition: color 0.2s; }
+    .nav-item i { font-size: 1.5rem; }
+    .nav-item span { font-size: 0.7rem; }
+    .nav-item.active { color: var(--ios-blue); }
+
+    /* --- UI Components --- */
+    .segmented-control { display: flex; padding: 16px; background-color: var(--app-bg); }
+    .segmented-control div { flex: 1; text-align: center; padding: 8px; background-color: var(--ios-mid-gray); color: var(--ios-dark-gray); font-weight: 500; cursor: pointer; transition: background-color 0.2s, color 0.2s; }
+    .segmented-control div:first-child { border-radius: 8px 0 0 8px; }
+    .segmented-control div:last-child { border-radius: 0 8px 8px 0; }
+    .segmented-control div.active { background-color: var(--ios-blue); color: var(--ios-white); }
+
+    /* --- VAULT VIEW --- */
+    .storage-stats-container {
+        padding: 12px 16px;
+        background-color: var(--ios-white);
+        border-bottom: 1px solid var(--ios-separator);
+    }
+    .total-storage-info { font-size: 1rem; font-weight: 500; margin-bottom: 10px; color: var(--ios-black); }
+    .total-storage-info strong { font-weight: 600; color: var(--ios-blue); }
+    .storage-breakdown { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+    .stat-item { background-color: var(--app-bg); padding: 6px 10px; border-radius: 6px; display: flex; flex-direction: column; }
+    .stat-item .stat-category { font-weight: 500; color: var(--ios-dark-gray); font-size: 0.8rem; }
+    .stat-item .stat-details { font-size: 0.75rem; }
+    
+    /* --- LIST VIEW STYLES --- */
+    .file-list { list-style: none; background-color: var(--ios-white); }
+    .file-list .file-item { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--ios-separator); cursor: pointer; }
+    .file-list .file-item:last-child { border-bottom: none; }
+    .file-list .file-icon { font-size: 1.8rem; width: 0px; text-align: center; margin-right: 50px; }
+    .file-list .file-icon i.fa-folder { color: #82C1FF; } /* Default color for list view */
+    .file-list .file-details { flex-grow: 1; overflow: hidden; }
+    .file-list .file-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-list .file-size { font-size: 0.8rem; color: var(--ios-dark-gray); }
+    .file-list .file-action-icon { font-size: 1.2rem; color: var(--ios-dark-gray); padding: 8px 12px; margin: -8px -12px; cursor: pointer; }
+    
+    /* --- GRID VIEW STYLES --- */
+    .file-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 24px;
+        padding: 16px;
+        list-style: none;
+        background-color: transparent;
+    }
+    .file-grid .file-item {
+        display: flex;
+        flex-direction: column;
+        cursor: pointer;
+        padding: 0;
+        border-bottom: none;
+    }
+
+    .fa-ellipsis-v:before, .fa-ellipsis-vertical:before {
+content: "\f142";
+color: white;}
+    .file-grid .file-preview {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        background-color: var(--ios-white);
+        border: 1px solid var(--ios-separator);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 8px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .file-grid .file-preview i.fa-folder { color: #82C1FF; }
+    .file-grid .file-preview i { font-size: 1.7rem; color: var(--ios-dark-gray); }
+    .file-grid .file-preview img { width: 100%; height: 100%; object-fit: cover; }
+    .file-grid .grid-action-btn { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; background-color: rgba(0, 0, 0, 0.3); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; cursor: pointer; transition: background-color 0.2s; transform: rotate(90deg); z-index: 5; }
+    .file-grid .grid-action-btn:hover { background-color: rgba(0, 0, 0, 0.5); }
+    .file-grid .file-details { overflow: hidden; }
+    .file-grid .file-name { font-weight: 400; font-size: 0.9rem; color: var(--ios-black); white-space: normal; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; margin-bottom: 2px; }
+    .file-grid .file-size { font-size: 0.8rem; color: var(--ios-dark-gray); }
+
+
+
+    .file-grid .file-preview i.fa-folder,  i.fa-solid.fa-book ,i.fa-solid.fa-star, i.fa-solid.fa-heart, i.fa-solid.fa-camera, i.fa-solid.fa-briefcase, i.fa-solid.fa-car, i.fa-solid.fa-plane, i.fa-solid.fa-key, i.fa-solid.fa-lightbulb, i.fa-solid.fa-file-audio, i.fa-solid.fa-file-image, i.fa-solid.fa-file-video, i.fa-solid.fa-file-pdf{
+        font-size: 2.5rem; 
+        color: rgb(201, 201, 201);
+    }
+
+    /* logout icon */
+    .fa-arrow-right-from-bracket:before, .fa-sign-out:before {
+    content: "\f08b";
+    color: red;
+}
+
+    /* --- SHARE VIEW --- */
+    #share-view .content-padding { padding: 16px; }
+    .drop-zone { border-radius: 12px; padding: 40px 20px; text-align: center; cursor: pointer; margin-bottom: 16px; }
+    .drop-zone i, #ShareIcon { font-size: 3rem; color: var(--ios-blue); margin-bottom: 12px; align-items: center; justify-content: center; display: flex; }
+    .drop-zone p { margin: 4px 0; color: var(--ios-dark-gray); }
+    .ios-button { width: 100%; padding: 14px; border-radius: 10px; border: none; font-size: 1rem; font-weight: 600; cursor: pointer; background-color: var(--ios-blue); color: var(--ios-white); display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .ios-button.secondary { background-color: var(--ios-mid-gray); color: var(--ios-blue); }
+    .ios-button:disabled { background-color: var(--ios-mid-gray); color: var(--ios-dark-gray); cursor: not-allowed; }
+    .or-divider { text-align: center; color: var(--ios-dark-gray); margin: 20px 0; }
+    .selected-file-display { display: flex; align-items: center; justify-content: space-between; background: var(--ios-white); padding: 12px; border-radius: 10px; margin-bottom: 16px; }
+    .selected-file-display i { color: var(--ios-green); margin-right: 8px; }
+    .selected-file-display span { font-weight: 500; }
+    .selected-file-display .clear-btn { color: var(--ios-red); cursor: pointer; }
+    .input-group { margin-bottom: 16px; }
+    .input-group input, .modal-body input { width: 100%; padding: 14px 16px; border: 1px solid var(--ios-mid-gray); background-color: var(--ios-light-gray); border-radius: 10px; font-size: 1rem; }
+    .input-group input:focus, .modal-body input:focus { outline: none; border-color: var(--ios-blue); box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2); }
+    .progress-container { margin: 16px 0; }
+    .progress-bar-track { width: 100%; height: 6px; background-color: var(--ios-mid-gray); border-radius: 3px; overflow: hidden; }
+    .progress-bar-fill { width: 0%; height: 100%; background-color: var(--ios-blue); border-radius: 3px; transition: width 0.3s ease; }
+    .incoming-file-list { list-style: none; background-color: var(--ios-white); border-radius: 12px; overflow: hidden; border: 1px solid var(--ios-mid-gray); }
+    .incoming-file-item { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--ios-separator); }
+    .incoming-file-actions button { width: 36px; height: 36px; border-radius: 50%; border: none; color: white; font-size: 1rem; cursor: pointer; margin-left: 8px; }
+    .incoming-file-actions .accept-btn { background-color: var(--ios-green); }
+    .incoming-file-actions .reject-btn { background-color: var(--ios-red); }
+
+    /* --- MODALS --- */
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4); z-index: 100; display: flex; opacity: 0; visibility: hidden; transition: opacity 0.3s ease; }
+    .modal-overlay.visible { opacity: 1; visibility: visible; }
+    
+    #action-sheet-modal .modal-content { position: absolute; bottom: 0; width: 100%; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateY(100%); transition: transform 0.3s ease-out; }
+    #action-sheet-modal.visible .modal-content { transform: translateY(0); }
+    .action-sheet-group { background: rgba(249, 249, 249, 0.94); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-radius: 14px; margin-bottom: 8px; }
+    .action-sheet-group button { width: 100%; padding: 16px; background: transparent; border: none; border-bottom: 1px solid var(--ios-separator); font-size: 1.1rem; color: var(--ios-blue); cursor: pointer; }
+    .action-sheet-group button:last-child { border-bottom: none; }
+    .action-sheet-group .delete-action { color: var(--ios-red); }
+    .action-sheet-group.cancel-group button { font-weight: 600; }
+
+    .centered-modal .modal-content { background: var(--ios-white); margin: auto; border-radius: 14px; width: 90%; max-width: 500px; max-height: 80vh; display: flex; flex-direction: column; transform: scale(0.95); opacity: 0; transition: transform 0.3s ease, opacity 0.3s ease; }
+    .centered-modal.visible .modal-content { transform: scale(1); opacity: 1; }
+    .modal-header { padding: 16px; border-bottom: 1px solid var(--ios-separator); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+    .modal-header h3 { font-size: 1.1rem; font-weight: 600; }
+    .modal-close-btn { font-size: 1.5rem; cursor: pointer; color: var(--ios-dark-gray); }
+    .modal-body { overflow-y: auto; flex-grow: 1; padding: 16px; }
+    #previewModal .modal-body { text-align: center; padding: 10px; }
+    #previewModal .modal-body img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    #previewModal .modal-body canvas { border: 1px solid var(--ios-mid-gray); max-width: 100%; height: auto !important; }
+    .modal-footer { flex-shrink: 0; display: flex; padding: 10px 16px; border-top: 1px solid var(--ios-separator); gap: 10px; }
+    .modal-footer button { flex-grow: 1; }
+    #pdfControls { justify-content: space-between; align-items: center; }
+    #pdfControls button { flex-grow: 0; width: auto; padding: 8px 16px; font-size: 0.9rem; }
+    
+    #folderIconSelector { display: grid; grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 16px; margin-top: 16px; }
+    .icon-choice { width: 100%; aspect-ratio: 1/1; display: flex; align-items: center; justify-content: center; border: 2px solid var(--ios-mid-gray); border-radius: 10px; cursor: pointer; transition: all 0.2s ease; }
+    .icon-choice i { font-size: 1.8rem; color: var(--ios-dark-gray); }
+    .icon-choice.selected { border-color: var(--ios-blue); background-color: #e5f1ff; }
+    .icon-choice.selected i { color: var(--ios-blue); }
+    #newFolderColorInput { width: 100%; height: 44px; border: 1px solid var(--ios-mid-gray); padding: 5px; border-radius: 10px; background-color: var(--ios-light-gray); cursor: pointer; }
+
+
+    /* Toast Notifications */
+    #toastContainer { position: fixed; top: calc(16px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .toast { padding: 10px 20px; border-radius: 20px; color: white; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.15); opacity: 0; transform: translateY(-20px); transition: opacity 0.3s ease, transform 0.3s ease; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.success { background-color: var(--ios-green); }
+    .toast.error { background-color: var(--ios-red); }
+    .toast.info { background-color: var(--ios-dark-gray); }
+
+</style>
+</head>
+<body>
+
+    <!-- Authentication Screen -->
+<div id="authScreen" class="screen active">
+    <div class="app-logo">iCloud</div>
+    <div id="loginForm" class="auth-form">
+        <h2>Sign In</h2>
+        <input type="email" id="loginEmailInput" placeholder="Email" autocomplete="email">
+        <input type="password" id="loginPasswordInput" placeholder="Password" autocomplete="current-password">
+        <p id="authError" class="auth-error"></p>
+        <button id="btnLogin">Sign In</button>
+        <p id="showRegisterLink" class="auth-link">Don't have an account? Sign Up</p>
+    </div>
+    <div id="registerForm" class="auth-form" style="display: none;">
+        <h2>Create Account</h2>
+        <input type="email" id="registerEmailInput" placeholder="Email" autocomplete="email">
+        <input type="password" id="registerPasswordInput" placeholder="Password" autocomplete="new-password">
+        <p id="registerError" class="auth-error"></p>
+        <button id="btnRegister">Sign Up</button>
+        <p id="showLoginLink" class="auth-link">Already have an account? Sign In</p>
+    </div>
+</div>
+
+<!-- Main Application Screen -->
+<div id="appScreen" class="screen">
+    <header class="app-header">
+        <div class="header-left">
+             <i class="fa-solid fa-arrow-left action-icon" id="btnBack" style="display: none;"></i>
+             <i class="fa-solid fa-arrow-right-from-bracket action-icon" id="btnLogout"></i>
+        </div>
+        <h1 class="title" id="appTitle">iCloud</h1>
+        <div class="header-right">
+            <i class="fa-solid fa-grip action-icon" id="btnViewToggle" style="display: none;"></i>
+            <i class="fa-solid fa-folder-plus action-icon" id="btnCreateFolder"></i>
+            <i class="fa-solid fa-plus action-icon" id="btnShowUpload"></i>
+        </div>
+        <input type="file" id="fileInput" hidden>
+    </header>
+
+    <main class="app-content">
+        <!-- Vault View -->
+        <div id="vault-view" class="app-view active">
+             <div class="segmented-control" id="fileFilterButtons">
+                <div class="active" data-filter="all">All</div>
+                <div data-filter="image">Images</div>
+                <div data-filter="video">Videos</div>
+                <div data-filter="doc">Docs</div>
+            </div>
+            <div id="storageStats" class="storage-stats-container"></div>
+            <ul id="fileList"></ul>
+        </div>
+        <!-- Share View -->
+        <div id="share-view" class="app-view">
+            <div class="segmented-control" id="shareModeToggle">
+                <div class="active" data-mode="send">Send</div>
+                <div data-mode="inbox">Inbox</div>
+            </div>
+            <div id="share-send-mode">
+                <div class="content-padding">
+                    <label for="shareFileInput" class="drop-zone">
+                       <span id="ShareIcon"> <svg xmlns="http://www.w3.org/2000/svg" height="70px" viewBox="0 -960 960 960" width="70px" fill="#006eff"><path d="M250-160q-86 0-148-62T40-370q0-78 49.5-137.5T217-579q20-97 94-158.5T482-799q113 0 189.5 81.5T748-522v24q72-2 122 46.5T920-329q0 69-50 119t-119 50H510q-24 0-42-18t-18-42v-258l-83 83-43-43 156-156 156 156-43 43-83-83v258h241q45 0 77-32t32-77q0-45-32-77t-77-32h-63v-84q0-89-60.5-153T478-739q-89 0-150 64t-61 153h-19q-62 0-105 43.5T100-371q0 62 43.93 106.5T250-220h140v60H250Zm230-290Z"/></svg> </span> 
+                        <p>Tap to select file</p>
+                        <p style="font-size: 0.8rem;">or drag & drop</p>
+                    </label>
+                    <input type="file" id="shareFileInput" hidden>
+                    <div class="or-divider">or</div>
+                    <button id="selectFromVaultBtn" class="ios-button secondary">
+                        <i class="fa-solid fa-cloud"></i>
+                        Select from iCloud
+                    </button>
+                    <div id="selectedShareFileDisplay" class="selected-file-display" style="display: none; margin-top: 16px;">
+                       <div><i class="fa-solid fa-circle-check"></i> <span id="selectedFileName"></span></div>
+                       <i id="clearSelectionBtn" class="fa-solid fa-circle-xmark clear-btn"></i>
+                    </div>
+                    <div class="input-group" style="margin-top: 24px;">
+                        <input type="email" id="receiverEmail" placeholder="Receiver's Email">
+                    </div>
+                    <div id="progressContainer" class="progress-container" style="display: none;">
+                       <div class="progress-bar-track"><div id="progressBar" class="progress-bar-fill"></div></div>
+                    </div>
+                    <button id="sendButton" class="ios-button">
+                         <i class="fa-solid fa-paper-plane"></i>
+                        <span>Send File</span>
+                    </button>
+                </div>
+            </div>
+            <div id="share-inbox-mode" style="display: none;">
+                <ul class="incoming-file-list" id="incomingFiles"></ul>
+            </div>
+        </div>
+    </main>
+    
+    <nav class="app-bottom-nav">
+        <div id="vaultTabBtn" class="nav-item active">
+            <i class="fa-solid fa-box-archive"></i>
+            <span>Vault</span>
+        </div>
+        <div id="shareTabBtn" class="nav-item">
+            <i class="fa-solid fa-share-nodes"></i>
+            <span>Share</span>
+        </div>
+    </nav>
+</div>
+
+<!-- Modals -->
+<div id="action-sheet-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="action-sheet-group">
+            <button id="actionPreview">Preview</button>
+            <button id="actionDownload">Download</button>
+            <button id="actionDelete" class="delete-action">Delete</button>
+        </div>
+        <div class="action-sheet-group cancel-group">
+            <button id="actionCancel">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div id="vaultSelectModal" class="modal-overlay centered-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Select from Vault</h3>
+            <i id="closeVaultSelectModal" class="fa-solid fa-xmark modal-close-btn"></i>
+        </div>
+        <div class="modal-body">
+            <ul class="file-list" id="vaultFileListForSharing"></ul>
+        </div>
+    </div>
+</div>
+
+<div id="previewModal" class="modal-overlay centered-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modalTitle">File Preview</h3>
+            <i id="closePreviewModal" class="fa-solid fa-xmark modal-close-btn"></i>
+        </div>
+        <div class="modal-body" id="modalBody"></div>
+        <div class="modal-footer" id="pdfControls" style="display: none;">
+            <button id="pdfPrev" class="ios-button secondary">Prev</button>
+            <span id="pdfPageInfo"></span>
+            <button id="pdfNext" class="ios-button secondary">Next</button>
+        </div>
+    </div>
+</div>
+
+<div id="folderCreationModal" class="modal-overlay centered-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>New Folder</h3>
+            <i class="fa-solid fa-xmark modal-close-btn"></i>
+        </div>
+        <div class="modal-body">
+            <input type="text" id="newFolderNameInput" placeholder="Folder Name">
+             <!-- NEW: Color Picker -->
+            <div class="input-group" style="margin-top: 16px;">
+                <label for="newFolderColorInput" style="display: block; margin-bottom: 8px; font-weight: 500;">Folder Color</label>
+                <input type="color" id="newFolderColorInput" value="#007AFF">
+            </div>
+            <div id="folderIconSelector"></div>
+        </div>
+        <div class="modal-footer">
+            <button id="cancelFolderCreationBtn" class="ios-button secondary">Cancel</button>
+            <button id="confirmFolderCreationBtn" class="ios-button">Create</button>
+        </div>
+    </div>
+</div>
+
+<div id="toastContainer"></div>
+
+<script type="module">
+    const _0x4cf923=_0x4e52;(function(_0x3fd4df,_0x1cc1ab){const _0x57f943=_0x4e52,_0x3bc9c9=_0x3fd4df();while(!![]){try{const _0x5c1b31=-parseInt(_0x57f943(0x17f))/0x1+parseInt(_0x57f943(0x16d))/0x2*(parseInt(_0x57f943(0x15c))/0x3)+-parseInt(_0x57f943(0x1e6))/0x4+-parseInt(_0x57f943(0x192))/0x5+parseInt(_0x57f943(0x16a))/0x6+-parseInt(_0x57f943(0x1fd))/0x7+parseInt(_0x57f943(0x148))/0x8*(parseInt(_0x57f943(0x1a1))/0x9);if(_0x5c1b31===_0x1cc1ab)break;else _0x3bc9c9['push'](_0x3bc9c9['shift']());}catch(_0x2ab794){_0x3bc9c9['push'](_0x3bc9c9['shift']());}}}(_0x61e7,0x1ddb3));import{initializeApp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';import{getAuth,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut,onAuthStateChanged}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';import{getDatabase,ref,get,set,push,onValue,update,remove}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';const GITHUB_ACCOUNTS=[{'owner':'HarshPahal','token':_0x4cf923(0xd7)},{'owner':_0x4cf923(0x1ba),'token':'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'}],SECRET_ENCRYPTION_KEY=_0x4cf923(0x1eb),firebaseConfig={'apiKey':_0x4cf923(0x19f),'authDomain':_0x4cf923(0xef),'databaseURL':_0x4cf923(0x1d0),'projectId':'blogs-a7325','storageBucket':'blogs-a7325.appspot.com','messagingSenderId':_0x4cf923(0x1c0),'appId':'1:868013133674:web:8ceaa7dfa63ee0d2a0df13','measurementId':_0x4cf923(0xc2)},PRIMARY_GITHUB_ACCOUNT=GITHUB_ACCOUNTS[0x0],MAIN_REPO_BASE_NAME=_0x4cf923(0x1d4),CENTER_INDEX_FILE='centerIndex.json',REPO_SIZE_LIMIT_GB=0x5f,LARGE_FILE_THRESHOLD_MB=0x1,CHUNK_SIZE=0x400*0x400,FOLDER_META_FILENAME=_0x4cf923(0x19e),FOLDER_ICONS=[_0x4cf923(0xe2),'fa-solid\x20fa-star','fa-solid\x20fa-heart',_0x4cf923(0x140),_0x4cf923(0x1d5),_0x4cf923(0x134),_0x4cf923(0xa1),_0x4cf923(0x11f),_0x4cf923(0x100),_0x4cf923(0x14e)],app=initializeApp(firebaseConfig),auth=getAuth(app),database=getDatabase(app);let currentUser=null,currentPathStack=[],currentFilter=_0x4cf923(0x11b),fileToShare=null,currentActionItem=null,currentView=localStorage['getItem'](_0x4cf923(0x177))||_0x4cf923(0x167),pdfPreviewState={'pdfDoc':null,'pageNum':0x1,'pageRendering':![],'pageNumPending':null},selectedFolderIcon=FOLDER_ICONS[0x0];window[_0x4cf923(0x15b)]&&(pdfjsLib[_0x4cf923(0x108)][_0x4cf923(0x1f3)]=_0x4cf923(0x153));const authScreen=document[_0x4cf923(0x178)](_0x4cf923(0x143)),loginForm=document['getElementById']('loginForm'),registerForm=document[_0x4cf923(0x178)](_0x4cf923(0xda)),loginEmailInput=document[_0x4cf923(0x178)](_0x4cf923(0xc8)),loginPasswordInput=document[_0x4cf923(0x178)]('loginPasswordInput'),registerEmailInput=document[_0x4cf923(0x178)](_0x4cf923(0x10c)),registerPasswordInput=document[_0x4cf923(0x178)]('registerPasswordInput'),btnLogin=document[_0x4cf923(0x178)](_0x4cf923(0x111)),btnRegister=document[_0x4cf923(0x178)](_0x4cf923(0x82)),authError=document[_0x4cf923(0x178)](_0x4cf923(0x77)),registerError=document[_0x4cf923(0x178)](_0x4cf923(0x84)),showRegisterLink=document[_0x4cf923(0x178)](_0x4cf923(0x150)),showLoginLink=document[_0x4cf923(0x178)](_0x4cf923(0xcc)),btnLogout=document[_0x4cf923(0x178)](_0x4cf923(0x8c)),appTitle=document[_0x4cf923(0x178)](_0x4cf923(0xac)),btnBack=document[_0x4cf923(0x178)]('btnBack'),btnCreateFolder=document[_0x4cf923(0x178)](_0x4cf923(0xd5)),btnShowUpload=document[_0x4cf923(0x178)](_0x4cf923(0x1f0)),fileInput=document[_0x4cf923(0x178)](_0x4cf923(0x8a)),vaultTabBtn=document[_0x4cf923(0x178)]('vaultTabBtn'),shareTabBtn=document[_0x4cf923(0x178)]('shareTabBtn'),fileListUl=document[_0x4cf923(0x178)](_0x4cf923(0xf3)),fileFilterButtons=document[_0x4cf923(0x178)]('fileFilterButtons'),shareModeToggle=document[_0x4cf923(0x178)]('shareModeToggle'),shareSendMode=document['getElementById'](_0x4cf923(0x8f)),shareInboxMode=document[_0x4cf923(0x178)](_0x4cf923(0xc7)),shareFileInput=document[_0x4cf923(0x178)](_0x4cf923(0x1ea)),receiverEmailInput=document[_0x4cf923(0x178)](_0x4cf923(0xdb)),sendButton=document[_0x4cf923(0x178)](_0x4cf923(0x145)),progressContainer=document[_0x4cf923(0x178)](_0x4cf923(0x99)),progressBar=document[_0x4cf923(0x178)]('progressBar'),incomingFilesDiv=document['getElementById'](_0x4cf923(0xaa)),selectFromVaultBtn=document['getElementById'](_0x4cf923(0xa6)),selectedShareFileDisplay=document[_0x4cf923(0x178)](_0x4cf923(0x8d)),selectedFileName=document['getElementById'](_0x4cf923(0x107)),clearSelectionBtn=document[_0x4cf923(0x178)](_0x4cf923(0x147)),vaultSelectModal=document[_0x4cf923(0x178)](_0x4cf923(0x17a)),previewModal=document[_0x4cf923(0x178)](_0x4cf923(0x112)),vaultFileListForSharing=document[_0x4cf923(0x178)](_0x4cf923(0x158)),pdfControls=document[_0x4cf923(0x178)]('pdfControls'),pdfPrevBtn=document['getElementById']('pdfPrev'),pdfNextBtn=document[_0x4cf923(0x178)](_0x4cf923(0x127)),pdfPageInfo=document[_0x4cf923(0x178)](_0x4cf923(0xf7)),storageStatsContainer=document[_0x4cf923(0x178)]('storageStats'),btnViewToggle=document[_0x4cf923(0x178)](_0x4cf923(0x1a8)),folderCreationModal=document[_0x4cf923(0x178)](_0x4cf923(0x115)),newFolderNameInput=document[_0x4cf923(0x178)](_0x4cf923(0x1f9)),newFolderColorInput=document[_0x4cf923(0x178)](_0x4cf923(0xc9)),folderIconSelector=document[_0x4cf923(0x178)](_0x4cf923(0x154)),confirmFolderCreationBtn=document[_0x4cf923(0x178)](_0x4cf923(0x188)),cancelFolderCreationBtn=document['getElementById'](_0x4cf923(0xe4)),showToast=(_0xf1dd38,_0x2800ad=_0x4cf923(0x1ef),_0xc8a641={})=>{const _0x544664=_0x4cf923,{duration:duration=0xbb8,id:id=null}=_0xc8a641;if(id){const _0x2ea60b=document[_0x544664(0x178)](id);if(_0x2ea60b){_0x2ea60b[_0x544664(0x1ca)]=_0x544664(0x12a)+_0x2800ad+_0x544664(0x128),_0x2ea60b[_0x544664(0x120)]=_0xf1dd38;return;}}const _0x215ab2=document['createElement'](_0x544664(0x78));_0x215ab2[_0x544664(0x1ca)]=_0x544664(0x12a)+_0x2800ad,_0x215ab2[_0x544664(0x120)]=_0xf1dd38,id&&(_0x215ab2['id']=id),document['getElementById'](_0x544664(0x102))['appendChild'](_0x215ab2),setTimeout(()=>_0x215ab2[_0x544664(0x1ad)][_0x544664(0x129)](_0x544664(0x180)),0xa),duration>0x0&&setTimeout(()=>{const _0xacad7=_0x544664;_0x215ab2[_0xacad7(0x1ad)]['remove'](_0xacad7(0x180)),_0x215ab2[_0xacad7(0x155)](_0xacad7(0x1e4),()=>_0x215ab2[_0xacad7(0xe1)]());},duration);},formatBytes=(_0x331aa9,_0x8a7b01=0x2)=>{const _0x551693=_0x4cf923;if(!+_0x331aa9)return _0x551693(0xb3);const _0x244fbc=0x400,_0x15f218=_0x8a7b01<0x0?0x0:_0x8a7b01,_0x22fd1a=['Bytes','KB','MB','GB','TB'],_0x317df2=Math[_0x551693(0xd0)](Math['log'](_0x331aa9)/Math[_0x551693(0x81)](_0x244fbc));return parseFloat((_0x331aa9/Math[_0x551693(0x1b2)](_0x244fbc,_0x317df2))['toFixed'](_0x15f218))+'\x20'+_0x22fd1a[_0x317df2];},getFileCategory=_0x31dfed=>{const _0x4fd6b8=_0x4cf923,_0x2e44a7=_0x31dfed['split']('.')[_0x4fd6b8(0x174)]()[_0x4fd6b8(0x1c2)](),_0x3afdf1={'Images':[_0x4fd6b8(0x97),_0x4fd6b8(0x17d),_0x4fd6b8(0x1de),_0x4fd6b8(0xbb),'bmp',_0x4fd6b8(0xad),'webp'],'Videos':[_0x4fd6b8(0x19d),'avi','mov',_0x4fd6b8(0x10e),_0x4fd6b8(0x7d)],'Docs':[_0x4fd6b8(0x1af),'doc',_0x4fd6b8(0xfa),_0x4fd6b8(0x7f),_0x4fd6b8(0x1e8),'ppt',_0x4fd6b8(0x198),_0x4fd6b8(0x144),_0x4fd6b8(0x1b0)],'Audio':['mp3',_0x4fd6b8(0x1db),_0x4fd6b8(0x14c),_0x4fd6b8(0x17b)],'Archives':[_0x4fd6b8(0xb4),_0x4fd6b8(0xa0),'7z',_0x4fd6b8(0xb0),'gz']};for(const _0x5cf766 in _0x3afdf1){if(_0x3afdf1[_0x5cf766][_0x4fd6b8(0xa4)](_0x2e44a7))return _0x5cf766;}return _0x4fd6b8(0x92);},showScreen=_0x451fb0=>{const _0x37fd4a=_0x4cf923;document[_0x37fd4a(0x1ed)](_0x37fd4a(0x117))[_0x37fd4a(0xd4)](_0x26468a=>_0x26468a[_0x37fd4a(0x1ad)][_0x37fd4a(0xe1)](_0x37fd4a(0xb8))),document['getElementById'](_0x451fb0)[_0x37fd4a(0x1ad)][_0x37fd4a(0x129)]('active');},showAuthForm=_0x5a82a2=>{const _0x1c3eb4=_0x4cf923;loginForm[_0x1c3eb4(0x162)][_0x1c3eb4(0x1e2)]=_0x5a82a2==='login'?_0x1c3eb4(0x137):'none',registerForm[_0x1c3eb4(0x162)][_0x1c3eb4(0x1e2)]=_0x5a82a2==='register'?_0x1c3eb4(0x137):_0x1c3eb4(0xd9),authError[_0x1c3eb4(0x120)]='',registerError[_0x1c3eb4(0x120)]='';};showRegisterLink['onclick']=()=>showAuthForm(_0x4cf923(0x165)),showLoginLink[_0x4cf923(0x175)]=()=>showAuthForm(_0x4cf923(0x1a9));const showAppView=_0x5a70fe=>{const _0x4e7f38=_0x4cf923;document['querySelectorAll'](_0x4e7f38(0x1b9))[_0x4e7f38(0xd4)](_0x2d7635=>_0x2d7635['classList'][_0x4e7f38(0xe1)]('active')),document[_0x4e7f38(0x178)](_0x5a70fe)[_0x4e7f38(0x1ad)]['add'](_0x4e7f38(0xb8));const _0x5dca33=_0x5a70fe===_0x4e7f38(0x113);btnShowUpload['style'][_0x4e7f38(0x1e2)]=_0x5dca33?_0x4e7f38(0x137):'none',btnCreateFolder['style']['display']=_0x5dca33?_0x4e7f38(0x137):'none',btnViewToggle['style']['display']=_0x5dca33?_0x4e7f38(0x137):'none',vaultTabBtn[_0x4e7f38(0x1ad)][_0x4e7f38(0x16b)](_0x4e7f38(0xb8),_0x5dca33),shareTabBtn[_0x4e7f38(0x1ad)][_0x4e7f38(0x16b)](_0x4e7f38(0xb8),!_0x5dca33),updateHeaderUI();};vaultTabBtn['onclick']=()=>showAppView(_0x4cf923(0x113)),shareTabBtn[_0x4cf923(0x175)]=()=>showAppView(_0x4cf923(0xf9));const showModal=_0xd22960=>document[_0x4cf923(0x178)](_0xd22960)[_0x4cf923(0x1ad)][_0x4cf923(0x129)](_0x4cf923(0x13b)),hideModal=_0x53370a=>document[_0x4cf923(0x178)](_0x53370a)[_0x4cf923(0x1ad)]['remove'](_0x4cf923(0x13b)),updateHeaderUI=()=>{const _0x444d51=_0x4cf923,_0x481d9b=document[_0x444d51(0x178)](_0x444d51(0x113))[_0x444d51(0x1ad)][_0x444d51(0x1e7)](_0x444d51(0xb8));_0x481d9b?(appTitle['textContent']=currentPathStack[_0x444d51(0x189)]>0x0?currentPathStack[currentPathStack[_0x444d51(0x189)]-0x1]:_0x444d51(0xf1),btnBack['style']['display']=currentPathStack['length']>0x0?_0x444d51(0x137):_0x444d51(0xd9),btnLogout[_0x444d51(0x162)][_0x444d51(0x1e2)]=currentPathStack[_0x444d51(0x189)]>0x0?_0x444d51(0xd9):_0x444d51(0x137)):(appTitle[_0x444d51(0x120)]=_0x444d51(0xe5),btnBack[_0x444d51(0x162)][_0x444d51(0x1e2)]=_0x444d51(0xd9),btnLogout[_0x444d51(0x162)][_0x444d51(0x1e2)]=_0x444d51(0x137));};onAuthStateChanged(auth,async _0x13b5cc=>{const _0x2d3606=_0x4cf923;if(_0x13b5cc){const _0x57401d=ref(database,_0x2d3606(0x183)+_0x13b5cc[_0x2d3606(0x1b3)]+_0x2d3606(0x1c8));set(_0x57401d,!![]),window[_0x2d3606(0x155)](_0x2d3606(0xab),()=>set(_0x57401d,![]));const _0x34d7e8=await loadUserVaultData(_0x13b5cc);currentUser={'uid':_0x13b5cc['uid'],'email':_0x13b5cc[_0x2d3606(0x1bd)],'vaultInfo':_0x34d7e8},showScreen(_0x2d3606(0x19c)),showAppView(_0x2d3606(0x113)),updateView(),setupFileListeners(_0x13b5cc);}else currentUser=null,currentPathStack=[],showScreen(_0x2d3606(0x143)),showAuthForm(_0x2d3606(0x1a9)),fileListUl[_0x2d3606(0x116)]='',incomingFilesDiv[_0x2d3606(0x116)]='';}),btnRegister[_0x4cf923(0x175)]=async()=>{const _0x152b96=_0x4cf923,_0x1894a6=registerEmailInput[_0x152b96(0x1bb)]['trim'](),_0x26e506=registerPasswordInput[_0x152b96(0x1bb)];registerError[_0x152b96(0x120)]='';try{const _0x3113b7=await createUserWithEmailAndPassword(auth,_0x1894a6,_0x26e506);await provisionGitHubVaultForNewUser(_0x3113b7['user']),await set(ref(database,'dropit_users/'+_0x3113b7[_0x152b96(0x164)][_0x152b96(0x1b3)]),{'email':_0x1894a6,'online':!![]}),showToast('Registration\x20successful!',_0x152b96(0x73));}catch(_0x30b3f7){registerError[_0x152b96(0x120)]=_0x30b3f7[_0x152b96(0xca)];}},btnLogin[_0x4cf923(0x175)]=async()=>{const _0xeb9e19=_0x4cf923,_0x40509b=loginEmailInput[_0xeb9e19(0x1bb)][_0xeb9e19(0x141)](),_0x1bce64=loginPasswordInput[_0xeb9e19(0x1bb)];authError[_0xeb9e19(0x120)]='';try{await signInWithEmailAndPassword(auth,_0x40509b,_0x1bce64),showToast(_0xeb9e19(0x118),_0xeb9e19(0x73));}catch(_0x2ae024){authError[_0xeb9e19(0x120)]=_0x2ae024[_0xeb9e19(0xca)];}},btnLogout[_0x4cf923(0x175)]=()=>{const _0x5ded45=_0x4cf923,_0xf10737=auth[_0x5ded45(0x1b7)];if(_0xf10737)set(ref(database,'dropit_users/'+_0xf10737[_0x5ded45(0x1b3)]+_0x5ded45(0x1c8)),![])[_0x5ded45(0xdc)](()=>signOut(auth));else signOut(auth);};function _0x61e7(){const _0x341685=['rar','fa-solid\x20fa-car','Utf8','fa-file-lines','includes','accountIndex','selectFromVaultBtn','></i>','Error\x20during\x20folder\x20deletion\x20process:','file-item','incomingFiles','beforeunload','appTitle','svg','Upload\x20failed:\x20','An\x20error\x20occurred:\x20','tar','Preparing\x20preview...','createElement','0\x20Bytes','zip','Download\x20failed:\x20','name','content','active','actionDownload','<li\x20class=\x22file-item\x22><div\x20class=\x22file-details\x22><div\x20class=\x22file-name\x22>This\x20folder\x20is\x20empty.</div></div></li>','gif','feat:\x20Span\x20repo\x20for\x20user\x20','chore:\x20Delete\x20','keys','catch','click','\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<div\x20class=\x22file-icon\x22><i\x20class=\x22fa-solid\x20','G-RJX09FKMMY','Deleting\x20','API\x20call\x20requires\x20a\x20token.','<li\x20class=\x22file-item\x22><div\x20class=\x22file-details\x22><div\x20class=\x22file-name\x22>Loading...</div></div></li>','icon-choice','share-inbox-mode','loginEmailInput','newFolderColorInput','message','\x20items\x20&bull;\x20','showLoginLink','pdf-canvas','dataTransfer','Skipping\x20file\x20','floor','</strong></div><div\x20class=\x22storage-breakdown\x22>','avi','fa-file-word','forEach','btnCreateFolder','</div><div\x20class=\x22file-size\x22>from\x20','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','appendChild','none','registerForm','receiverEmail','then','Failed\x20to\x20generate\x20thumbnail\x20for\x20','Error\x20sending\x20file','<i\x20class=\x22fa-solid\x20fa-paper-plane\x22></i><span>Send\x20File</span>','Error\x20scanning\x20path\x20','remove','fa-solid\x20fa-folder','.file-preview','cancelFolderCreationBtn','Share\x20Files','destroy','img','fileChunks/','chore:\x20Create\x20initial\x20folder\x20for\x20','Decrypting\x20file\x20from\x20vault...','DELETE','application/vnd.github.v3+json','pdfDoc','sender','blogs-a7325.firebaseapp.com','Failed\x20to\x20delete\x20item:\x20','My\x20Vault','input','fileList','\x27)\x22\x20class=\x22accept-btn\x22><i\x20class=\x22fa-solid\x20fa-check\x22></i></button><button\x20onclick=\x22window.rejectFile(\x27','list','\x20due\x20to\x20error:','pdfPageInfo','stringify','share-view','docx','chore:\x20Create\x20initial\x20folder','</div><div\x20class=\x22file-size\x22>Folder</div></div>','getPage','preventDefault','dataset','fa-solid\x20fa-key','.gitkeep','toastContainer','<p\x20style=\x22padding:\x2020px;\x22>Loading\x20PDF\x20preview...</p>','mov','<canvas\x20id=\x22pdf-canvas\x22></canvas>','data','selectedFileName','GlobalWorkerOptions','token','Unknown\x20error','dragover','registerEmailInput','.icon-choice\x20i','mkv','/repos/','querySelector','btnLogin','previewModal','vault-view','disabled','folderCreationModal','innerHTML','.screen','Login\x20successful!','/contents/','\x20failed.','all','type','pageNumPending','Creating...','fa-solid\x20fa-plane','textContent','div[data-mode]','entries','<div\x20class=\x22total-storage-info\x22>Total\x20Used:\x20<strong>','action-sheet-modal','files/','cursor','pdfNext','\x20show','add','toast\x20','Preparing\x20to\x20download\x20\x22','Bearer\x20','filter','\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20</div>\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<div\x20class=\x22file-details\x22><div\x20class=\x22file-name\x22>','blob','sending','promise','\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<div\x20class=\x22file-preview\x22><i\x20class=\x22','Invalid\x20folder\x20name.','fa-solid\x20fa-briefcase','change','/user/repos','flex','localeCompare','Are\x20you\x20sure\x20you\x20want\x20to\x20delete\x20file\x20\x22','shift','visible','#007AFF','revokeObjectURL','Downloading\x20','some','fa-solid\x20fa-book','trim','mode','authScreen','txt','sendButton','object','clearSelectionBtn','8lysfJP','bmp','find','charCodeAt','ogg','vault','fa-solid\x20fa-lightbulb','\x22></i></div><div\x20class=\x22file-details\x22><div\x20class=\x22file-name\x22>','showRegisterLink','Preview\x20of\x20','pageNum','https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js','folderIconSelector','addEventListener','\x22\x20is\x20empty\x20or\x20does\x20not\x20exist.','download','vaultFileListForSharing','file-list','startsWith','pdfjsLib','483iuOcCM','PUT','repoOwner','onload','fa-file-video','doc','style','/.gitkeep','user','register','toString','grid','count','GET','1033266ySJkjN','toggle','path','160fuIeFR','actionCancel','Select\x20a\x20file\x20and\x20enter\x20a\x20receiver','encrypt','</div>\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<div\x20class=\x22file-details\x22><div\x20class=\x22file-name\x22>','split','pageRendering','pop','onclick','Preview\x20Failed:\x20','fileView','getElementById','color','vaultSelectModal','m4a','var(--ios-white)','jpeg','statusText','216478xbCyvm','show','...','key','dropit_users/','Stale\x20data','file','Folder\x20\x22','data:application/pdf','confirmFolderCreationBtn','length','fa-file-image','pointer','data:image','\x22\x20style=\x22color:\x20','Failed\x20to\x20create\x20folder:\x20','User\x20vault\x20not\x20loaded.','</div></div>','decrypt','934370cNkqYb','src','vaultInfo','File\x20rejected.','no-cache','closest','pptx','AES','webp','createObjectURL','appScreen','mp4','__.folder_meta.json','AIzaSyDB_ylrW7hartjCjSAqjjZjUoNSrSX7Et4','join','5505525txFyzY','stopPropagation','Create','\x22\x20is\x20empty.','repoName','\x20file(s)\x20selected.','render','btnViewToggle','login','Upload\x20complete!','result','\x20items\x20from\x20\x22','classList','href','pdf','csv','isArray','pow','uid','local','sort','push','currentUser','\x22\x20created.','.app-view','Harsh-Kumar-Pahal','value','json','email','Are\x20you\x20sure\x20you\x20want\x20to\x20delete\x20the\x20folder\x20\x22','<div\x20class=\x22grid-action-btn\x22><i\x20class=\x22fa-solid\x20fa-ellipsis-vertical\x22></i></div>','868013133674','fa-file-excel','toLowerCase','acceptFile','files','closeVaultSelectModal','.icon-choice','currentTarget','/online','map','className','data:application/pdf;base64,','fa-solid\x20fa-grip\x20action-icon','target','\x22\x20and\x20ALL\x20its\x20contents?\x20This\x20cannot\x20be\x20undone.','random','https://blogs-a7325-default-rtdb.firebaseio.com','<div\x20class=\x22file-action-icon\x22><i\x20class=\x22fa-solid\x20fa-ellipsis\x22></i></div>','parse','backgroundColor','secure-file-vault','fa-solid\x20fa-camera','fa-file-audio','\x22></i>','readAsDataURL','getViewport','<li\x20class=\x22file-item\x22><div\x20class=\x22file-details\x22><div\x20class=\x22file-name\x22>Your\x20vault\x20is\x20empty.</div></div></li>','wav','status','.file-action-icon','png','error','alt','val','display','sha','transitionend','fa-file-zipper','630912YScgwr','contains','xlsx','substring','shareFileInput','YOUR_SUPER_STRONG_AND_SECRET_KEY_GOES_HERE','actionDelete','querySelectorAll','\x20files.\x20Zipping...','info','btnShowUpload','Error\x20fetching\x20from\x20','numPages','workerSrc','Delete\x20failed:\x20','width','\x20of\x20','getDocument','generateAsync','newFolderNameInput','onloadend','404','<div\x20class=\x22file-icon\x22><i\x20class=\x22fa-solid\x20','794115wqXERg','ceil','.zip\x22\x20download\x20started.','<p\x20style=\x22padding:\x2020px;\x22>Preview\x20not\x20available\x20for\x20this\x20file\x20type.</p>','\x20→\x20','\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<div\x20class=\x22file-icon\x22><i\x20class=\x22','POST','Conflict\x20(409):\x20','File\x20sent\x20successfully!','Finding\x20items\x20in\x20\x22','<div\x20class=\x22total-storage-info\x22>Calculating\x20storage...</div>','rejectFile','\x22...','selected','success','insertAdjacentHTML','repositories','modalTitle','authError','div','actionPreview','\x22></i></div>\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<div\x20class=\x22file-details\x22><div\x20class=\x22file-name\x22>','var(--ios-mid-gray)','</div><div\x20class=\x22file-size\x22>','webm','\x22\x20deleted\x20successfully.','xls','ready-for-download','log','btnRegister','.file-item','registerError','.drop-zone','feat:\x20Create\x20folder\x20','modalBody','icon','setItem','fileInput','<i\x20class=\x22fa-solid\x20fa-spinner\x20fa-spin\x22></i><span>Sending...</span>','btnLogout','selectedShareFileDisplay','\x20in\x20','share-send-mode','feat:\x20Add\x20encrypted\x20file\x20','dir','Others','owner','dragenter','size','Download\x20started.','jpg','delete-progress-toast','progressContainer','body','dropit_users','incoming-file-item','block','Download\x20failed','closePreviewModal'];_0x61e7=function(){return _0x341685;};return _0x61e7();}async function githubApi(_0x43dfb4,_0x29f865=_0x4cf923(0x169),_0x48562a=null,_0x3080ce){const _0x399eed=_0x4cf923;if(!_0x3080ce)throw new Error(_0x399eed(0xc4));const _0x2edcda='https://api.github.com'+_0x43dfb4,_0x2b6df6={'Authorization':_0x399eed(0x12c)+_0x3080ce,'Accept':_0x399eed(0xec)},_0x4ba030={'method':_0x29f865,'headers':_0x2b6df6,'cache':_0x399eed(0x196)};if(_0x48562a)_0x4ba030[_0x399eed(0x9a)]=JSON[_0x399eed(0xf8)](_0x48562a);const _0x1508ca=await fetch(_0x2edcda,_0x4ba030);if(!_0x1508ca['ok']){if(_0x1508ca[_0x399eed(0x1dc)]===0x194)return{'data':null,'status':0x194};if(_0x1508ca['status']===0x1a6)return{'data':null,'status':0x1a6};if(_0x1508ca[_0x399eed(0x1dc)]===0x199){const _0x56996d=await _0x1508ca[_0x399eed(0x1bc)]()['catch'](()=>({'message':_0x1508ca[_0x399eed(0x17e)]}));throw new Error(_0x399eed(0x6c)+(_0x56996d[_0x399eed(0xca)]||_0x399eed(0x184)));}const _0xfc9818=await _0x1508ca[_0x399eed(0x1bc)]()[_0x399eed(0xbf)](()=>({'message':_0x1508ca[_0x399eed(0x17e)]}));throw new Error(_0x29f865+'\x20'+_0x43dfb4+_0x399eed(0x201)+_0x1508ca[_0x399eed(0x1dc)]+':\x20'+(_0xfc9818[_0x399eed(0xca)]||_0x399eed(0x10a)));}if([0xc9,0xcc]['includes'](_0x1508ca[_0x399eed(0x1dc)]))return{'data':await _0x1508ca[_0x399eed(0x1bc)]()[_0x399eed(0xbf)](()=>null),'status':_0x1508ca[_0x399eed(0x1dc)]};return{'data':await _0x1508ca[_0x399eed(0x1bc)](),'status':_0x1508ca[_0x399eed(0x1dc)]};}async function getJsonFile(_0x290569,_0xed4687,_0x29acd9,_0x26fa33){const _0x15c616=_0x4cf923,{data:_0x3970ea,status:_0x253e2c}=await githubApi(_0x15c616(0x10f)+_0x290569+'/'+_0xed4687+_0x15c616(0x119)+_0x29acd9,_0x15c616(0x169),null,_0x26fa33);if(_0x253e2c===0x194)return{'content':null,'sha':null};return{'content':JSON[_0x15c616(0x1d2)](atob(_0x3970ea['content'])),'sha':_0x3970ea[_0x15c616(0x1e3)]};}async function provisionGitHubVaultForNewUser(_0x57c597){const _0x53f9a1=_0x4cf923,{content:_0x28689d,sha:_0x428490}=await getJsonFile(PRIMARY_GITHUB_ACCOUNT[_0x53f9a1(0x93)],MAIN_REPO_BASE_NAME,CENTER_INDEX_FILE,PRIMARY_GITHUB_ACCOUNT[_0x53f9a1(0x109)]),_0x10e079=_0x28689d||{};if(_0x10e079[_0x57c597['email']])return;const _0x1f0ce2=Math['floor'](Math[_0x53f9a1(0x1cf)]()*GITHUB_ACCOUNTS['length']),_0x1dea62=GITHUB_ACCOUNTS[_0x1f0ce2],_0x1ed5c6=MAIN_REPO_BASE_NAME+'-'+_0x57c597[_0x53f9a1(0x1b3)][_0x53f9a1(0x1e9)](0x0,0x8)+'-1';await githubApi(_0x53f9a1(0x136),_0x53f9a1(0x6b),{'name':_0x1ed5c6,'private':!![]},_0x1dea62['token']),_0x10e079[_0x57c597[_0x53f9a1(0x1bd)]]={'repositories':[{'owner':_0x1dea62['owner'],'name':_0x1ed5c6,'accountIndex':_0x1f0ce2}]};const _0x3ab43b=btoa(JSON[_0x53f9a1(0xf8)](_0x10e079,null,0x2)),_0x561389='feat:\x20Register\x20new\x20user\x20'+_0x57c597[_0x53f9a1(0x1bd)];await githubApi('/repos/'+PRIMARY_GITHUB_ACCOUNT[_0x53f9a1(0x93)]+'/'+MAIN_REPO_BASE_NAME+_0x53f9a1(0x119)+CENTER_INDEX_FILE,_0x53f9a1(0x15d),{'message':_0x561389,'content':_0x3ab43b,'sha':_0x428490},PRIMARY_GITHUB_ACCOUNT[_0x53f9a1(0x109)]),await githubApi('/repos/'+_0x1dea62[_0x53f9a1(0x93)]+'/'+_0x1ed5c6+_0x53f9a1(0x119)+_0x57c597[_0x53f9a1(0x1bd)]+_0x53f9a1(0x163),'PUT',{'message':_0x53f9a1(0xe9)+_0x57c597[_0x53f9a1(0x1bd)],'content':btoa('p')},_0x1dea62[_0x53f9a1(0x109)]);}async function loadUserVaultData(_0x3d592c){const _0x336f17=_0x4cf923,{content:_0x53cef1}=await getJsonFile(PRIMARY_GITHUB_ACCOUNT[_0x336f17(0x93)],MAIN_REPO_BASE_NAME,CENTER_INDEX_FILE,PRIMARY_GITHUB_ACCOUNT[_0x336f17(0x109)]);return _0x53cef1?_0x53cef1[_0x3d592c[_0x336f17(0x1bd)]]:null;}async function getActiveRepoForUpload(){const _0x4e0642=_0x4cf923;if(!currentUser||!currentUser[_0x4e0642(0x194)])throw new Error(_0x4e0642(0x18f));const _0x5b848c=currentUser[_0x4e0642(0x194)][_0x4e0642(0x75)][currentUser['vaultInfo'][_0x4e0642(0x75)][_0x4e0642(0x189)]-0x1],{owner:_0x14d563,name:_0x377536,accountIndex:_0x4e8926}=_0x5b848c,_0x4224ca=GITHUB_ACCOUNTS[_0x4e8926][_0x4e0642(0x109)],{data:_0x2762c1}=await githubApi(_0x4e0642(0x10f)+_0x14d563+'/'+_0x377536,'GET',null,_0x4224ca),_0x10e94d=_0x2762c1[_0x4e0642(0x95)]/(0x400*0x400);if(_0x10e94d<REPO_SIZE_LIMIT_GB)return _0x5b848c;const _0x3a9768=Math[_0x4e0642(0xd0)](Math['random']()*GITHUB_ACCOUNTS[_0x4e0642(0x189)]),_0x53c8fa=GITHUB_ACCOUNTS[_0x3a9768],_0x2400fb=currentUser[_0x4e0642(0x194)][_0x4e0642(0x75)]['length']+0x1,_0x287061=MAIN_REPO_BASE_NAME+'-'+currentUser[_0x4e0642(0x1b3)][_0x4e0642(0x1e9)](0x0,0x8)+'-'+_0x2400fb;await githubApi('/user/repos','POST',{'name':_0x287061,'private':!![]},_0x53c8fa[_0x4e0642(0x109)]);const _0x54e003={'owner':_0x53c8fa[_0x4e0642(0x93)],'name':_0x287061,'accountIndex':_0x3a9768},{content:_0x235b56,sha:_0x1ad1cf}=await getJsonFile(PRIMARY_GITHUB_ACCOUNT[_0x4e0642(0x93)],MAIN_REPO_BASE_NAME,CENTER_INDEX_FILE,PRIMARY_GITHUB_ACCOUNT[_0x4e0642(0x109)]);_0x235b56[currentUser[_0x4e0642(0x1bd)]][_0x4e0642(0x75)][_0x4e0642(0x1b6)](_0x54e003);const _0x39a345=btoa(JSON[_0x4e0642(0xf8)](_0x235b56,null,0x2));return await githubApi(_0x4e0642(0x10f)+PRIMARY_GITHUB_ACCOUNT[_0x4e0642(0x93)]+'/'+MAIN_REPO_BASE_NAME+_0x4e0642(0x119)+CENTER_INDEX_FILE,_0x4e0642(0x15d),{'message':_0x4e0642(0xbc)+currentUser[_0x4e0642(0x1bd)],'content':_0x39a345,'sha':_0x1ad1cf},PRIMARY_GITHUB_ACCOUNT[_0x4e0642(0x109)]),await githubApi(_0x4e0642(0x10f)+_0x53c8fa['owner']+'/'+_0x287061+'/contents/'+currentUser[_0x4e0642(0x1bd)]+_0x4e0642(0x163),_0x4e0642(0x15d),{'message':_0x4e0642(0xfb),'content':btoa('p')},_0x53c8fa[_0x4e0642(0x109)]),currentUser[_0x4e0642(0x194)][_0x4e0642(0x75)][_0x4e0642(0x1b6)](_0x54e003),_0x54e003;}function getCurrentPath(){const _0x2f1e02=_0x4cf923;return[currentUser[_0x2f1e02(0x1bd)],...currentPathStack][_0x2f1e02(0x1a0)]('/');}btnBack[_0x4cf923(0x175)]=()=>{currentPathStack['pop'](),updateHeaderUI(),refreshFileList();},btnShowUpload['onclick']=()=>fileInput[_0x4cf923(0xc0)](),fileInput[_0x4cf923(0x155)](_0x4cf923(0x135),async()=>{const _0x27544d=_0x4cf923;if(!fileInput[_0x27544d(0x1c4)]['length'])return;showToast('Starting\x20upload...',_0x27544d(0x1ef));const _0x5a1b23=fileInput[_0x27544d(0x1c4)][0x0],_0x2cb2d0=new FileReader();_0x2cb2d0[_0x27544d(0x15f)]=async()=>{const _0x94c770=_0x27544d;try{const _0x1226b7=await getActiveRepoForUpload(),{owner:_0x292fdc,name:_0x3bf404,accountIndex:_0x1759aa}=_0x1226b7,_0x3240cb=GITHUB_ACCOUNTS[_0x1759aa][_0x94c770(0x109)],_0x2a0edb=getCurrentPath()+'/'+_0x5a1b23[_0x94c770(0xb6)],_0x1308cf=btoa(CryptoJS['AES'][_0x94c770(0x170)](_0x2cb2d0[_0x94c770(0x1ab)],SECRET_ENCRYPTION_KEY)[_0x94c770(0x166)]());await githubApi(_0x94c770(0x10f)+_0x292fdc+'/'+_0x3bf404+_0x94c770(0x119)+_0x2a0edb,'PUT',{'message':_0x94c770(0x90)+_0x5a1b23['name'],'content':_0x1308cf},_0x3240cb),showToast(_0x94c770(0x1aa),_0x94c770(0x73)),await refreshFileList();}catch(_0x3fafda){showToast(_0x94c770(0xae)+_0x3fafda[_0x94c770(0xca)],_0x94c770(0x1df));}finally{fileInput['value']='';}},_0x2cb2d0[_0x27544d(0x1d8)](_0x5a1b23);});function updateView(){const _0x219090=_0x4cf923;fileListUl[_0x219090(0x1ca)]=currentView===_0x219090(0x167)?'file-grid':_0x219090(0x159),btnViewToggle[_0x219090(0x1ca)]=currentView===_0x219090(0x167)?'fa-solid\x20fa-list\x20action-icon':_0x219090(0x1cc),localStorage[_0x219090(0x89)](_0x219090(0x177),currentView),refreshFileList();}btnViewToggle[_0x4cf923(0x175)]=()=>{const _0x5607df=_0x4cf923;currentView=currentView==='grid'?_0x5607df(0xf5):_0x5607df(0x167),updateView();};async function getVaultContentsWithMetadata(){const _0x4681f3=_0x4cf923;if(!currentUser||!currentUser['vaultInfo'])return[];let _0x10c530=[];const _0x5b07e5=getCurrentPath();for(const _0x421878 of currentUser['vaultInfo'][_0x4681f3(0x75)]){const {owner:_0x2d34db,name:_0x3fd1c2,accountIndex:_0x5e7296}=_0x421878,_0x397b4e=GITHUB_ACCOUNTS[_0x5e7296]['token'];try{const {data:_0x5ee569}=await githubApi(_0x4681f3(0x10f)+_0x2d34db+'/'+_0x3fd1c2+_0x4681f3(0x119)+_0x5b07e5,_0x4681f3(0x169),null,_0x397b4e);Array[_0x4681f3(0x1b1)](_0x5ee569)&&_0x5ee569[_0x4681f3(0x12d)](_0x447de1=>_0x447de1[_0x4681f3(0xb6)]!==_0x4681f3(0x101)&&_0x447de1[_0x4681f3(0xb6)]!==FOLDER_META_FILENAME)['forEach'](_0x5d47de=>{const _0xdae7a5=_0x4681f3;!_0x10c530[_0xdae7a5(0x13f)](_0x58534f=>_0x58534f['name']===_0x5d47de[_0xdae7a5(0xb6)]&&_0x58534f[_0xdae7a5(0x11c)]===_0x5d47de['type'])&&_0x10c530['push']({..._0x5d47de,'repoOwner':_0x2d34db,'repoName':_0x3fd1c2,'accountIndex':_0x5e7296});});}catch(_0x3d6e8a){if(!_0x3d6e8a[_0x4681f3(0xca)][_0x4681f3(0xa4)](_0x4681f3(0x1fb)))console[_0x4681f3(0x1df)](_0x4681f3(0x1f1)+_0x3fd1c2+':',_0x3d6e8a);}}const _0x5d3b84=_0x10c530[_0x4681f3(0x1c9)](async _0x587957=>{const _0x167419=_0x4681f3;if(_0x587957['type']===_0x167419(0x91)){const {content:_0x33851d}=await getJsonFile(_0x587957[_0x167419(0x15e)],_0x587957['repoName'],_0x587957['path']+'/'+FOLDER_META_FILENAME,GITHUB_ACCOUNTS[_0x587957[_0x167419(0xa5)]][_0x167419(0x109)]);return{..._0x587957,'icon':_0x33851d?.[_0x167419(0x88)]||_0x167419(0xe2),'color':_0x33851d?.[_0x167419(0x179)]||null};}return _0x587957;}),_0x929f32=await Promise[_0x4681f3(0x11b)](_0x5d3b84);return _0x929f32[_0x4681f3(0x1b5)]((_0x5cd155,_0x5e55b1)=>_0x5cd155[_0x4681f3(0x11c)]===_0x5e55b1['type']?_0x5cd155['name'][_0x4681f3(0x138)](_0x5e55b1[_0x4681f3(0xb6)]):_0x5cd155['type']===_0x4681f3(0x91)?-0x1:0x1);}async function getAllFilesForStats(){const _0x307e16=_0x4cf923;if(!currentUser||!currentUser['vaultInfo'])return[];let _0x50fc43=[];const _0x401562=[currentUser[_0x307e16(0x1bd)]],_0x398f69=new Set();while(_0x401562[_0x307e16(0x189)]>0x0){const _0x5bfdd7=_0x401562[_0x307e16(0x13a)]();if(_0x398f69['has'](_0x5bfdd7))continue;_0x398f69[_0x307e16(0x129)](_0x5bfdd7);for(const _0x1a74bf of currentUser[_0x307e16(0x194)][_0x307e16(0x75)]){const {owner:_0x59d602,name:_0x2db867,accountIndex:_0x1be156}=_0x1a74bf,_0x231721=GITHUB_ACCOUNTS[_0x1be156][_0x307e16(0x109)];try{const {data:_0x2564e7}=await githubApi('/repos/'+_0x59d602+'/'+_0x2db867+_0x307e16(0x119)+_0x5bfdd7,_0x307e16(0x169),null,_0x231721);if(Array[_0x307e16(0x1b1)](_0x2564e7))for(const _0x34bc5f of _0x2564e7){if(_0x34bc5f[_0x307e16(0x11c)]===_0x307e16(0x91))_0x401562[_0x307e16(0x1b6)](_0x34bc5f[_0x307e16(0x16c)]);else{if(_0x34bc5f[_0x307e16(0x11c)]==='file'&&_0x34bc5f[_0x307e16(0xb6)]!==_0x307e16(0x101)&&_0x34bc5f[_0x307e16(0xb6)]!==FOLDER_META_FILENAME){if(!_0x50fc43[_0x307e16(0x13f)](_0x18a039=>_0x18a039['sha']===_0x34bc5f[_0x307e16(0x1e3)]))_0x50fc43['push'](_0x34bc5f);}}}}catch(_0x715b9f){if(!_0x715b9f['message']['includes'](_0x307e16(0x1fb)))console[_0x307e16(0x1df)](_0x307e16(0xe0)+_0x5bfdd7+_0x307e16(0x8e)+_0x2db867+':',_0x715b9f);}}}return _0x50fc43;}async function refreshFileList(){const _0x56e2a9=_0x4cf923;if(!currentUser)return;fileListUl['innerHTML']=_0x56e2a9(0xc5);if(currentPathStack[_0x56e2a9(0x189)]===0x0){storageStatsContainer[_0x56e2a9(0x162)][_0x56e2a9(0x1e2)]=_0x56e2a9(0x9d),storageStatsContainer['innerHTML']=_0x56e2a9(0x6f);const _0x349aea=await getAllFilesForStats();if(_0x349aea[_0x56e2a9(0x189)]>0x0){let _0x596ff2=0x0;const _0x103c89={};_0x349aea[_0x56e2a9(0xd4)](_0x361b26=>{const _0x5bda6f=_0x56e2a9;_0x596ff2+=_0x361b26[_0x5bda6f(0x95)];const _0x1fb321=getFileCategory(_0x361b26['name']);if(!_0x103c89[_0x1fb321])_0x103c89[_0x1fb321]={'count':0x0,'size':0x0};_0x103c89[_0x1fb321][_0x5bda6f(0x168)]++,_0x103c89[_0x1fb321][_0x5bda6f(0x95)]+=_0x361b26[_0x5bda6f(0x95)];});let _0x4fe2d9=_0x56e2a9(0x123)+formatBytes(_0x596ff2)+_0x56e2a9(0xd1);Object['keys'](_0x103c89)[_0x56e2a9(0x1b5)]()[_0x56e2a9(0xd4)](_0x494402=>{const _0x5612b9=_0x56e2a9,_0x57fb50=_0x103c89[_0x494402];_0x4fe2d9+='<div\x20class=\x22stat-item\x22><span\x20class=\x22stat-category\x22>'+_0x494402+'</span><span\x20class=\x22stat-details\x22>'+_0x57fb50[_0x5612b9(0x168)]+_0x5612b9(0xcb)+formatBytes(_0x57fb50[_0x5612b9(0x95)])+'</span></div>';}),_0x4fe2d9+='</div>',storageStatsContainer['innerHTML']=_0x4fe2d9;}else storageStatsContainer[_0x56e2a9(0x116)]='<div\x20class=\x22total-storage-info\x22>Your\x20vault\x20is\x20empty.</div>';}else storageStatsContainer[_0x56e2a9(0x162)][_0x56e2a9(0x1e2)]=_0x56e2a9(0xd9);const _0x4b6346=await getVaultContentsWithMetadata(),_0x1df260=filterItems(_0x4b6346);fileListUl[_0x56e2a9(0x116)]='';if(_0x1df260[_0x56e2a9(0x189)]===0x0){fileListUl['innerHTML']=_0x56e2a9(0xba);return;}const _0x4df290=[];_0x1df260['forEach'](_0x562d3f=>{const _0x4be56c=_0x56e2a9,_0x2af530=document[_0x4be56c(0xb2)]('li');_0x2af530[_0x4be56c(0x1ca)]=_0x4be56c(0xa9),Object[_0x4be56c(0xbe)](_0x562d3f)[_0x4be56c(0xd4)](_0x50d4e1=>_0x2af530[_0x4be56c(0xff)][_0x50d4e1]=typeof _0x562d3f[_0x50d4e1]===_0x4be56c(0x146)?JSON[_0x4be56c(0xf8)](_0x562d3f[_0x50d4e1]):_0x562d3f[_0x50d4e1]);const _0x25303d=_0x4be56c(0x1bf),_0x879e4f=_0x4be56c(0x1d1);if(_0x562d3f[_0x4be56c(0x11c)]===_0x4be56c(0x91)){const _0x4938e7=_0x562d3f['color']?'style=\x22color:\x20'+_0x562d3f['color']+';\x22':'';_0x2af530[_0x4be56c(0x116)]=currentView===_0x4be56c(0x167)?_0x4be56c(0x132)+_0x562d3f[_0x4be56c(0x88)]+'\x22\x20'+_0x4938e7+_0x4be56c(0xa7)+_0x25303d+_0x4be56c(0x171)+_0x562d3f['name']+_0x4be56c(0x190):_0x4be56c(0x6a)+_0x562d3f[_0x4be56c(0x88)]+'\x22\x20'+_0x4938e7+'></i></div>\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<div\x20class=\x22file-details\x22><div\x20class=\x22file-name\x22>'+_0x562d3f['name']+_0x4be56c(0xfc)+_0x879e4f;}else{_0x2af530[_0x4be56c(0x116)]=currentView===_0x4be56c(0x167)?'\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<div\x20class=\x22file-preview\x22>\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<i\x20class=\x22fa-solid\x20'+getFileIcon(_0x562d3f[_0x4be56c(0xb6)])+_0x4be56c(0x1d7)+_0x25303d+_0x4be56c(0x12e)+_0x562d3f[_0x4be56c(0xb6)]+_0x4be56c(0x7c)+formatBytes(_0x562d3f[_0x4be56c(0x95)])+'</div></div>':_0x4be56c(0xc1)+getFileIcon(_0x562d3f[_0x4be56c(0xb6)])+_0x4be56c(0x7a)+_0x562d3f[_0x4be56c(0xb6)]+_0x4be56c(0x7c)+formatBytes(_0x562d3f['size'])+_0x4be56c(0x190)+_0x879e4f;if(currentView===_0x4be56c(0x167))_0x4df290[_0x4be56c(0x1b6)](_0x2af530);}fileListUl['appendChild'](_0x2af530);}),_0x4df290[_0x56e2a9(0xd4)](_0x514589=>generateAndApplyThumbnail(_0x514589));}fileListUl[_0x4cf923(0x155)](_0x4cf923(0xc0),_0x591a5b=>{const _0x26ae05=_0x4cf923,_0x1c65ca=_0x591a5b['target'][_0x26ae05(0x197)](_0x26ae05(0x83));if(!_0x1c65ca||!_0x1c65ca['dataset'][_0x26ae05(0xb6)])return;const _0x3dd103=_0x1c65ca[_0x26ae05(0xff)]['type'],_0xc24d5f=_0x591a5b[_0x26ae05(0x1cd)][_0x26ae05(0x197)](_0x26ae05(0x1dd))||_0x591a5b[_0x26ae05(0x1cd)]['closest']('.grid-action-btn');if(_0xc24d5f){_0x591a5b[_0x26ae05(0x1a2)](),currentActionItem=_0x1c65ca[_0x26ae05(0xff)],showActionSheetFor(_0x3dd103);return;}if(_0x3dd103===_0x26ae05(0x91))currentPathStack[_0x26ae05(0x1b6)](_0x1c65ca[_0x26ae05(0xff)][_0x26ae05(0xb6)]),updateHeaderUI(),refreshFileList();else _0x3dd103===_0x26ae05(0x185)&&handlePreviewClick(_0x1c65ca);});function _0x4e52(_0x50b451,_0x34b9cd){const _0x61e7eb=_0x61e7();return _0x4e52=function(_0x4e521e,_0x40afe6){_0x4e521e=_0x4e521e-0x6a;let _0x1889cc=_0x61e7eb[_0x4e521e];return _0x1889cc;},_0x4e52(_0x50b451,_0x34b9cd);}function filterItems(_0x5196f5){const _0x39a8f9=_0x4cf923;if(currentFilter===_0x39a8f9(0x11b))return _0x5196f5;const _0x21fb09={'image':[_0x39a8f9(0x97),_0x39a8f9(0x17d),_0x39a8f9(0x1de),_0x39a8f9(0xbb),_0x39a8f9(0x149)],'video':['mp4',_0x39a8f9(0xd2),_0x39a8f9(0x104)],'doc':[_0x39a8f9(0x1af),_0x39a8f9(0x161),_0x39a8f9(0xfa),'xls',_0x39a8f9(0x1e8),_0x39a8f9(0x144)]},_0x1e7505=_0x21fb09[currentFilter];if(!_0x1e7505)return _0x5196f5['filter'](_0x44990d=>_0x44990d[_0x39a8f9(0x11c)]===_0x39a8f9(0x91));return _0x5196f5[_0x39a8f9(0x12d)](_0x95569b=>_0x95569b[_0x39a8f9(0x11c)]===_0x39a8f9(0x91)||_0x1e7505[_0x39a8f9(0xa4)](_0x95569b[_0x39a8f9(0xb6)][_0x39a8f9(0x172)]('.')[_0x39a8f9(0x174)]()[_0x39a8f9(0x1c2)]()));}fileFilterButtons['addEventListener']('click',_0x3de234=>{const _0x5a4128=_0x4cf923,_0x18f8dd=_0x3de234['target'][_0x5a4128(0x197)]('div[data-filter]');_0x18f8dd&&(fileFilterButtons[_0x5a4128(0x1ed)]('div')['forEach'](_0x54724e=>_0x54724e[_0x5a4128(0x1ad)][_0x5a4128(0xe1)](_0x5a4128(0xb8))),_0x18f8dd[_0x5a4128(0x1ad)][_0x5a4128(0x129)](_0x5a4128(0xb8)),currentFilter=_0x18f8dd[_0x5a4128(0xff)][_0x5a4128(0x12d)],refreshFileList());});function showActionSheetFor(_0x5b1c10){const _0x21e44b=_0x4cf923;document[_0x21e44b(0x178)](_0x21e44b(0x79))[_0x21e44b(0x162)][_0x21e44b(0x1e2)]=_0x5b1c10===_0x21e44b(0x185)?_0x21e44b(0x9d):_0x21e44b(0xd9),document['getElementById'](_0x21e44b(0xb9))[_0x21e44b(0x162)][_0x21e44b(0x1e2)]=_0x21e44b(0x9d),document[_0x21e44b(0x178)](_0x21e44b(0x1ec))['style'][_0x21e44b(0x1e2)]='block',showModal(_0x21e44b(0x124));}async function fetchAndDecryptFile(_0x4bae3b){const _0x15a788=_0x4cf923,{path:_0x5e0635,sha:_0x1f4804,size:_0x2bdd9e,repoOwner:_0x2e0a1b,repoName:_0x4b5c1a,accountIndex:_0x11242b}=_0x4bae3b,_0x55d9d3=GITHUB_ACCOUNTS[parseInt(_0x11242b)][_0x15a788(0x109)];let _0x134f9e;if(parseInt(_0x2bdd9e)/(0x400*0x400)>LARGE_FILE_THRESHOLD_MB){const {data:_0x195a8a}=await githubApi(_0x15a788(0x10f)+_0x2e0a1b+'/'+_0x4b5c1a+'/git/blobs/'+_0x1f4804,_0x15a788(0x169),null,_0x55d9d3);_0x134f9e=_0x195a8a[_0x15a788(0xb7)];}else{const {data:_0x4c3016}=await githubApi(_0x15a788(0x10f)+_0x2e0a1b+'/'+_0x4b5c1a+_0x15a788(0x119)+_0x5e0635,_0x15a788(0x169),null,_0x55d9d3);_0x134f9e=_0x4c3016[_0x15a788(0xb7)];}if(!_0x134f9e)throw new Error('Could\x20not\x20retrieve\x20file\x20content.');const _0x3b31f0=CryptoJS[_0x15a788(0x199)][_0x15a788(0x191)](atob(_0x134f9e),SECRET_ENCRYPTION_KEY)[_0x15a788(0x166)](CryptoJS['enc'][_0x15a788(0xa2)]);if(!_0x3b31f0)throw new Error('Decryption\x20failed.');return _0x3b31f0;}async function generateAndApplyThumbnail(_0x1d108e){const _0x4489d4=_0x4cf923,_0x48368e=_0x1d108e[_0x4489d4(0xff)],_0x5ccdc8=_0x48368e['name'],_0x3eeed6=_0x5ccdc8['split']('.')[_0x4489d4(0x174)]()['toLowerCase'](),_0x5dc6e3=_0x1d108e[_0x4489d4(0x110)](_0x4489d4(0xe3)),_0x1d48c4=['jpg','jpeg',_0x4489d4(0x1de),_0x4489d4(0xbb),_0x4489d4(0x19a)][_0x4489d4(0xa4)](_0x3eeed6);if(!_0x1d48c4)return;try{const _0x497464=await fetchAndDecryptFile(_0x48368e),_0xa54933=document['createElement'](_0x4489d4(0xe7));_0xa54933[_0x4489d4(0x193)]=_0x497464,_0xa54933[_0x4489d4(0x1e0)]=_0x4489d4(0x151)+_0x5ccdc8,_0xa54933[_0x4489d4(0x15f)]=()=>{const _0x1257de=_0x4489d4;_0x5dc6e3[_0x1257de(0x116)]='',_0x5dc6e3[_0x1257de(0xd8)](_0xa54933),_0x5dc6e3[_0x1257de(0x74)]('beforeend',_0x1257de(0x1bf));};}catch(_0x33d869){console[_0x4489d4(0x1df)](_0x4489d4(0xdd)+_0x5ccdc8+':',_0x33d869);}}document[_0x4cf923(0x178)](_0x4cf923(0x16e))['onclick']=()=>hideModal(_0x4cf923(0x124)),document['getElementById'](_0x4cf923(0x124))[_0x4cf923(0x175)]=_0xf38be6=>{const _0x1a1f1f=_0x4cf923;if(_0xf38be6[_0x1a1f1f(0x1cd)]===_0xf38be6[_0x1a1f1f(0x1c7)])hideModal(_0x1a1f1f(0x124));},document['getElementById'](_0x4cf923(0x79))[_0x4cf923(0x175)]=async()=>{const _0x268d45=_0x4cf923;hideModal(_0x268d45(0x124));if(currentActionItem)handlePreviewClick({'dataset':currentActionItem});},document['getElementById']('actionDelete')[_0x4cf923(0x175)]=async()=>{const _0x5afdb2=_0x4cf923;hideModal(_0x5afdb2(0x124));if(currentActionItem)handleDeleteClick(currentActionItem);},document['getElementById'](_0x4cf923(0xb9))[_0x4cf923(0x175)]=async()=>{const _0x5d8f74=_0x4cf923;hideModal('action-sheet-modal');if(!currentActionItem)return;if(currentActionItem[_0x5d8f74(0x11c)]==='file')handleDownloadClick({'dataset':currentActionItem});else currentActionItem[_0x5d8f74(0x11c)]===_0x5d8f74(0x91)&&handleDownloadFolderClick(currentActionItem);};async function handlePreviewClick(_0x1caacf){const _0x3e621c=_0x4cf923;try{showToast(_0x3e621c(0xb1),_0x3e621c(0x1ef));const _0x51cdaf=await fetchAndDecryptFile(_0x1caacf[_0x3e621c(0xff)]);document[_0x3e621c(0x178)](_0x3e621c(0x76))[_0x3e621c(0x120)]=_0x1caacf[_0x3e621c(0xff)][_0x3e621c(0xb6)];const _0x20dc7f=document[_0x3e621c(0x178)](_0x3e621c(0x87));pdfControls['style'][_0x3e621c(0x1e2)]=_0x3e621c(0xd9),_0x20dc7f[_0x3e621c(0x116)]='';if(_0x51cdaf[_0x3e621c(0x15a)](_0x3e621c(0x18c)))_0x20dc7f[_0x3e621c(0x116)]='<img\x20src=\x22'+_0x51cdaf+'\x22>';else{if(_0x51cdaf[_0x3e621c(0x15a)](_0x3e621c(0x187))){const _0x4fae2f=atob(_0x51cdaf['substring'](_0x3e621c(0x1cb)[_0x3e621c(0x189)]));_0x20dc7f['innerHTML']=_0x3e621c(0x103),pdfjsLib[_0x3e621c(0x1f7)]({'data':_0x4fae2f})[_0x3e621c(0x131)]['then'](function(_0x465e10){const _0xb05dca=_0x3e621c;pdfPreviewState['pdfDoc']=_0x465e10,_0x20dc7f[_0xb05dca(0x116)]=_0xb05dca(0x105),pdfControls[_0xb05dca(0x162)]['display']='flex',renderPdfPage(pdfPreviewState[_0xb05dca(0x152)]);},function(_0x5d6f03){const _0x252172=_0x3e621c;showToast('Error\x20loading\x20PDF.',_0x252172(0x1df)),_0x20dc7f[_0x252172(0x116)]='<p\x20style=\x22padding:\x2020px;\x22>Could\x20not\x20load\x20PDF\x20preview.</p>';});}else _0x20dc7f['innerHTML']=_0x3e621c(0x200);}showModal(_0x3e621c(0x112));}catch(_0x1a1062){showToast(_0x3e621c(0x176)+_0x1a1062[_0x3e621c(0xca)],_0x3e621c(0x1df));}}function renderPdfPage(_0x35df66){const _0x34ca0b=_0x4cf923;pdfPreviewState[_0x34ca0b(0x173)]=!![];const _0x263fe6=document[_0x34ca0b(0x178)](_0x34ca0b(0xcd)),_0x5a269a=_0x263fe6['getContext']('2d');pdfPreviewState['pdfDoc'][_0x34ca0b(0xfd)](_0x35df66)[_0x34ca0b(0xdc)](function(_0x4de303){const _0x2604fd=_0x34ca0b,_0x27a116=document[_0x2604fd(0x178)]('modalBody')['clientWidth'],_0x404a36=_0x4de303['getViewport']({'scale':_0x27a116/_0x4de303[_0x2604fd(0x1d9)]({'scale':0x1})[_0x2604fd(0x1f5)]});_0x263fe6['height']=_0x404a36['height'],_0x263fe6[_0x2604fd(0x1f5)]=_0x404a36[_0x2604fd(0x1f5)];const _0xce8cea={'canvasContext':_0x5a269a,'viewport':_0x404a36};_0x4de303[_0x2604fd(0x1a7)](_0xce8cea)['promise'][_0x2604fd(0xdc)](()=>{const _0x554e82=_0x2604fd;pdfPreviewState[_0x554e82(0x173)]=![],pdfPreviewState[_0x554e82(0x11d)]!==null&&(renderPdfPage(pdfPreviewState[_0x554e82(0x11d)]),pdfPreviewState[_0x554e82(0x11d)]=null);});}),pdfPageInfo[_0x34ca0b(0x120)]='Page\x20'+_0x35df66+_0x34ca0b(0x1f6)+pdfPreviewState[_0x34ca0b(0xed)][_0x34ca0b(0x1f2)],pdfPrevBtn[_0x34ca0b(0x114)]=_0x35df66<=0x1,pdfNextBtn[_0x34ca0b(0x114)]=_0x35df66>=pdfPreviewState[_0x34ca0b(0xed)][_0x34ca0b(0x1f2)];}function queueRenderPage(_0x34fa7c){const _0x2ddc69=_0x4cf923;pdfPreviewState['pageRendering']?pdfPreviewState[_0x2ddc69(0x11d)]=_0x34fa7c:renderPdfPage(_0x34fa7c);}pdfPrevBtn[_0x4cf923(0x175)]=()=>{const _0x1996a4=_0x4cf923;if(pdfPreviewState['pageNum']<=0x1)return;pdfPreviewState[_0x1996a4(0x152)]--,queueRenderPage(pdfPreviewState[_0x1996a4(0x152)]);},pdfNextBtn[_0x4cf923(0x175)]=()=>{const _0x54c6e3=_0x4cf923;if(pdfPreviewState[_0x54c6e3(0x152)]>=pdfPreviewState[_0x54c6e3(0xed)]['numPages'])return;pdfPreviewState[_0x54c6e3(0x152)]++,queueRenderPage(pdfPreviewState[_0x54c6e3(0x152)]);};async function handleDownloadClick(_0x4d0831){const _0x41d226=_0x4cf923;try{const _0x4ac0a4=await fetchAndDecryptFile(_0x4d0831['dataset']),_0x4c5c3d=await fetch(_0x4ac0a4),_0x553862=await _0x4c5c3d[_0x41d226(0x12f)](),_0x2bbeb4=document[_0x41d226(0xb2)]('a');_0x2bbeb4[_0x41d226(0x1ae)]=URL[_0x41d226(0x19b)](_0x553862),_0x2bbeb4[_0x41d226(0x157)]=_0x4d0831[_0x41d226(0xff)][_0x41d226(0xb6)],_0x2bbeb4[_0x41d226(0xc0)](),_0x2bbeb4[_0x41d226(0xe1)](),URL['revokeObjectURL'](_0x2bbeb4[_0x41d226(0x1ae)]),showToast(_0x41d226(0x96),_0x41d226(0x73));}catch(_0x5e11e1){showToast(_0x41d226(0xb5)+_0x5e11e1['message'],_0x41d226(0x1df));}}async function handleDeleteClick(_0x29bb14){const {type:_0x194965}=_0x29bb14;if(_0x194965==='file')await deleteFile(_0x29bb14);else _0x194965==='dir'&&await deleteFolder(_0x29bb14);}async function deleteFile(_0x5c76c0){const _0x1574b9=_0x4cf923,{path:_0x198a5f,sha:_0x41c44f,name:_0x401a17,repoOwner:_0x1df135,repoName:_0xc98c51,accountIndex:_0x11dafb}=_0x5c76c0;if(!confirm(_0x1574b9(0x139)+_0x401a17+'\x22?'))return;try{const _0x5cf29e=GITHUB_ACCOUNTS[parseInt(_0x11dafb)]['token'];await githubApi(_0x1574b9(0x10f)+_0x1df135+'/'+_0xc98c51+_0x1574b9(0x119)+_0x198a5f,_0x1574b9(0xeb),{'message':_0x1574b9(0xbd)+_0x401a17,'sha':_0x41c44f},_0x5cf29e),showToast('\x22'+_0x401a17+'\x22\x20deleted.',_0x1574b9(0x1ef)),await refreshFileList();}catch(_0x2672e1){showToast(_0x1574b9(0x1f4)+_0x2672e1[_0x1574b9(0xca)],_0x1574b9(0x1df));}}async function deleteFolder(_0x22dc8a){const _0x269c6e=_0x4cf923,{path:_0x1cf81a,name:_0x43946b}=_0x22dc8a;if(!confirm(_0x269c6e(0x1be)+_0x43946b+_0x269c6e(0x1ce)))return;const _0x54bb41=_0x269c6e(0x98);showToast(_0x269c6e(0x6e)+_0x43946b+_0x269c6e(0x71),_0x269c6e(0x1ef),{'id':_0x54bb41,'duration':0x0});try{const _0x5041e8=await getCompleteListOfItemsInFolder(_0x1cf81a);if(_0x5041e8[_0x269c6e(0x189)]===0x0){showToast(_0x269c6e(0x186)+_0x43946b+_0x269c6e(0x156),_0x269c6e(0x1ef)),document['getElementById'](_0x54bb41)?.[_0x269c6e(0xe1)](),await refreshFileList();return;}let _0x44d103=0x0,_0x3e37e4=0x0;const _0x31af3c=_0x5041e8[_0x269c6e(0x189)];for(const [_0xba99f0,_0x40d376]of _0x5041e8[_0x269c6e(0x122)]()){showToast(_0x269c6e(0xc3)+(_0xba99f0+0x1)+_0x269c6e(0x1f6)+_0x31af3c+':\x20'+_0x40d376['name'],'info',{'id':_0x54bb41,'duration':0x0});try{const _0x1a76db=GITHUB_ACCOUNTS[_0x40d376[_0x269c6e(0xa5)]][_0x269c6e(0x109)];await githubApi(_0x269c6e(0x10f)+_0x40d376[_0x269c6e(0x15e)]+'/'+_0x40d376[_0x269c6e(0x1a5)]+'/contents/'+_0x40d376['path'],'DELETE',{'message':_0x269c6e(0xbd)+_0x40d376[_0x269c6e(0xb6)]+'\x20from\x20folder\x20'+_0x43946b,'sha':_0x40d376['sha']},_0x1a76db),_0x44d103++;}catch(_0x3533ae){_0x3e37e4++,console[_0x269c6e(0x1df)](_0x269c6e(0xf0)+_0x40d376[_0x269c6e(0x16c)],_0x3533ae);}}document[_0x269c6e(0x178)](_0x54bb41)?.['remove'](),_0x3e37e4>0x0?showToast('Deleted\x20'+_0x44d103+_0x269c6e(0x1ac)+_0x43946b+'\x22,\x20but\x20'+_0x3e37e4+_0x269c6e(0x11a),_0x269c6e(0x1df)):showToast(_0x269c6e(0x186)+_0x43946b+_0x269c6e(0x7e),_0x269c6e(0x73));}catch(_0x58e695){document[_0x269c6e(0x178)](_0x54bb41)?.[_0x269c6e(0xe1)](),console[_0x269c6e(0x1df)](_0x269c6e(0xa8),_0x58e695),showToast(_0x269c6e(0xaf)+_0x58e695[_0x269c6e(0xca)],_0x269c6e(0x1df));}finally{await refreshFileList();}}async function getCompleteListOfItemsInFolder(_0x5466ef){const _0x70617f=_0x4cf923,_0x2ef219=await getFolderContentsRecursively(_0x5466ef),_0xf8c81=_0x5466ef+'/'+FOLDER_META_FILENAME;let _0x6b82f5=null;for(const _0x2dfb00 of currentUser['vaultInfo']['repositories']){const {owner:_0xd8aba2,name:_0x3e2ff8,accountIndex:_0xbc3938}=_0x2dfb00,_0x3b98b8=GITHUB_ACCOUNTS[_0xbc3938][_0x70617f(0x109)];try{const {data:_0x25776d}=await githubApi(_0x70617f(0x10f)+_0xd8aba2+'/'+_0x3e2ff8+_0x70617f(0x119)+_0xf8c81,_0x70617f(0x169),null,_0x3b98b8);if(_0x25776d&&_0x25776d[_0x70617f(0x1e3)]){_0x6b82f5={..._0x25776d,'repoOwner':_0xd8aba2,'repoName':_0x3e2ff8,'accountIndex':_0xbc3938};break;}}catch(_0x309eab){}}const _0x1b36a6=[..._0x2ef219];if(_0x6b82f5)_0x1b36a6['push'](_0x6b82f5);return _0x1b36a6;}async function getFolderContentsRecursively(_0x42bd90){const _0x353c3b=_0x4cf923,_0x25ff8b=[],_0x469b48=[_0x42bd90],_0x458fcb=new Set();while(_0x469b48[_0x353c3b(0x189)]>0x0){const _0x375cf6=_0x469b48[_0x353c3b(0x13a)]();if(_0x458fcb['has'](_0x375cf6))continue;_0x458fcb[_0x353c3b(0x129)](_0x375cf6);for(const _0x3e0d73 of currentUser[_0x353c3b(0x194)][_0x353c3b(0x75)]){const {owner:_0x1e90ad,name:_0x545323,accountIndex:_0xb0d231}=_0x3e0d73,_0x2dfdfe=GITHUB_ACCOUNTS[_0xb0d231][_0x353c3b(0x109)];try{const {data:_0x1b9377}=await githubApi(_0x353c3b(0x10f)+_0x1e90ad+'/'+_0x545323+'/contents/'+_0x375cf6,'GET',null,_0x2dfdfe);if(Array[_0x353c3b(0x1b1)](_0x1b9377))for(const _0x89d236 of _0x1b9377){if(_0x89d236['type']===_0x353c3b(0x91))_0x469b48[_0x353c3b(0x1b6)](_0x89d236[_0x353c3b(0x16c)]);else _0x89d236['type']===_0x353c3b(0x185)&&_0x89d236[_0x353c3b(0xb6)]!==FOLDER_META_FILENAME&&_0x25ff8b[_0x353c3b(0x1b6)]({..._0x89d236,'repoOwner':_0x1e90ad,'repoName':_0x545323,'accountIndex':_0xb0d231});}}catch(_0x399d03){if(!_0x399d03[_0x353c3b(0xca)]['includes'](_0x353c3b(0x1fb)))console[_0x353c3b(0x1df)](_0x353c3b(0xe0)+_0x375cf6+_0x353c3b(0x8e)+_0x545323+':',_0x399d03);}}}return _0x25ff8b;}async function handleDownloadFolderClick(_0x5b90dd){const _0x4acd56=_0x4cf923,{path:_0x1ea89d,name:_0x4187da}=_0x5b90dd;showToast(_0x4acd56(0x12b)+_0x4187da+'\x22...','info');try{const _0x1e886b=new JSZip(),_0x22222e=await getFolderContentsRecursively(_0x1ea89d);if(_0x22222e['length']===0x0){showToast(_0x4acd56(0x186)+_0x4187da+_0x4acd56(0x1a4),'info');return;}showToast('Found\x20'+_0x22222e[_0x4acd56(0x189)]+_0x4acd56(0x1ee),_0x4acd56(0x1ef));const _0x35d70a=_0x3d9644=>{const _0x18c6ed=_0x4acd56,_0x29d1cc=_0x3d9644[_0x18c6ed(0x172)](','),_0x1fec51=_0x29d1cc[0x0]['match'](/:(.*?);/)[0x1],_0x3be8b7=atob(_0x29d1cc[0x1]);let _0x6a6cd9=_0x3be8b7[_0x18c6ed(0x189)];const _0x35164f=new Uint8Array(_0x6a6cd9);while(_0x6a6cd9--)_0x35164f[_0x6a6cd9]=_0x3be8b7[_0x18c6ed(0x14b)](_0x6a6cd9);return new Blob([_0x35164f],{'type':_0x1fec51});};for(const _0x238a87 of _0x22222e){try{const _0x39e03c=await fetchAndDecryptFile(_0x238a87),_0x2f63f5=_0x35d70a(_0x39e03c),_0x318e4c=_0x238a87[_0x4acd56(0x16c)][_0x4acd56(0x1e9)](_0x1ea89d[_0x4acd56(0x189)]+0x1);_0x1e886b[_0x4acd56(0x185)](_0x318e4c,_0x2f63f5);}catch(_0x3871dd){console[_0x4acd56(0x1df)](_0x4acd56(0xcf)+_0x238a87[_0x4acd56(0xb6)]+_0x4acd56(0xf6),_0x3871dd);}}const _0x20e38a=await _0x1e886b[_0x4acd56(0x1f8)]({'type':'blob'}),_0x874946=document[_0x4acd56(0xb2)]('a');_0x874946[_0x4acd56(0x1ae)]=URL[_0x4acd56(0x19b)](_0x20e38a),_0x874946[_0x4acd56(0x157)]=_0x4187da+'.zip',document['body']['appendChild'](_0x874946),_0x874946['click'](),_0x874946[_0x4acd56(0xe1)](),URL[_0x4acd56(0x13d)](_0x874946[_0x4acd56(0x1ae)]),showToast('\x22'+_0x4187da+_0x4acd56(0x1ff),_0x4acd56(0x73));}catch(_0x4b6b1b){showToast('Failed\x20to\x20create\x20zip:\x20'+_0x4b6b1b[_0x4acd56(0xca)],_0x4acd56(0x1df));}}function getFileIcon(_0x3aa1af){const _0x5c70c2=_0x4cf923,_0x3ad88d=_0x3aa1af['split']('.')['pop']()['toLowerCase'](),_0xa3f481={'pdf':'fa-file-pdf','doc':_0x5c70c2(0xd3),'docx':'fa-file-word','xls':_0x5c70c2(0x1c1),'xlsx':_0x5c70c2(0x1c1),'zip':_0x5c70c2(0x1e5),'rar':_0x5c70c2(0x1e5),'txt':_0x5c70c2(0xa3),'jpg':_0x5c70c2(0x18a),'jpeg':_0x5c70c2(0x18a),'png':_0x5c70c2(0x18a),'gif':_0x5c70c2(0x18a),'mp3':_0x5c70c2(0x1d6),'wav':_0x5c70c2(0x1d6),'mp4':'fa-file-video','mov':_0x5c70c2(0x160)};return _0xa3f481[_0x3ad88d]||'fa-file';}const closeAndCleanupPreviewModal=()=>{const _0x36db13=_0x4cf923;pdfPreviewState[_0x36db13(0xed)]&&(pdfPreviewState['pdfDoc'][_0x36db13(0xe6)](),pdfPreviewState[_0x36db13(0xed)]=null,pdfPreviewState['pageNum']=0x1),hideModal(_0x36db13(0x112));};document['getElementById'](_0x4cf923(0x9f))[_0x4cf923(0x175)]=closeAndCleanupPreviewModal,previewModal[_0x4cf923(0x175)]=_0x3d6d2a=>{const _0xace79d=_0x4cf923;if(_0x3d6d2a[_0xace79d(0x1cd)]===_0x3d6d2a[_0xace79d(0x1c7)])closeAndCleanupPreviewModal();},btnCreateFolder['onclick']=()=>{const _0x335381=_0x4cf923;newFolderNameInput[_0x335381(0x1bb)]='',newFolderColorInput['value']=_0x335381(0x13c),folderIconSelector[_0x335381(0x116)]='',selectedFolderIcon=FOLDER_ICONS[0x0];const _0x366ed1=newFolderColorInput[_0x335381(0x1bb)];FOLDER_ICONS[_0x335381(0xd4)]((_0x43471a,_0x517a6c)=>{const _0x5ac68f=_0x335381,_0x23d4b6=document['createElement']('div');_0x23d4b6[_0x5ac68f(0x1ca)]=_0x5ac68f(0xc6);if(_0x517a6c===0x0)_0x23d4b6[_0x5ac68f(0x1ad)][_0x5ac68f(0x129)](_0x5ac68f(0x72));_0x23d4b6[_0x5ac68f(0xff)]['icon']=_0x43471a,_0x23d4b6[_0x5ac68f(0x116)]='<i\x20class=\x22'+_0x43471a+_0x5ac68f(0x18d)+_0x366ed1+';\x22></i>',folderIconSelector[_0x5ac68f(0xd8)](_0x23d4b6);}),showModal(_0x335381(0x115));},folderIconSelector[_0x4cf923(0x155)](_0x4cf923(0xc0),_0x2aee34=>{const _0x5b9252=_0x4cf923,_0x463f9d=_0x2aee34['target'][_0x5b9252(0x197)](_0x5b9252(0x1c6));if(!_0x463f9d)return;folderIconSelector['querySelectorAll'](_0x5b9252(0x1c6))[_0x5b9252(0xd4)](_0x44009b=>_0x44009b[_0x5b9252(0x1ad)]['remove'](_0x5b9252(0x72))),_0x463f9d[_0x5b9252(0x1ad)][_0x5b9252(0x129)](_0x5b9252(0x72)),selectedFolderIcon=_0x463f9d[_0x5b9252(0xff)][_0x5b9252(0x88)];}),newFolderColorInput[_0x4cf923(0x155)](_0x4cf923(0xf2),_0x4c3ccb=>{const _0x508b65=_0x4cf923,_0x1dc942=_0x4c3ccb[_0x508b65(0x1cd)][_0x508b65(0x1bb)];folderIconSelector['querySelectorAll'](_0x508b65(0x10d))['forEach'](_0x6cdadd=>{const _0x11f0e2=_0x508b65;_0x6cdadd[_0x11f0e2(0x162)][_0x11f0e2(0x179)]=_0x1dc942;});}),cancelFolderCreationBtn[_0x4cf923(0x175)]=()=>hideModal('folderCreationModal'),folderCreationModal[_0x4cf923(0x110)]('.modal-close-btn')[_0x4cf923(0x175)]=()=>hideModal(_0x4cf923(0x115)),confirmFolderCreationBtn[_0x4cf923(0x175)]=async()=>{const _0x579795=_0x4cf923,_0x500e68=newFolderNameInput['value']['trim']();if(!_0x500e68||_0x500e68[_0x579795(0xa4)]('/')||_0x500e68['includes']('\x5c')){showToast(_0x579795(0x133),_0x579795(0x1df));return;}confirmFolderCreationBtn[_0x579795(0x114)]=!![],confirmFolderCreationBtn[_0x579795(0x120)]=_0x579795(0x11e);try{const _0x1341c4=await getActiveRepoForUpload(),_0x4c493d=getCurrentPath()+'/'+_0x500e68+'/'+FOLDER_META_FILENAME,_0x5a0a88=GITHUB_ACCOUNTS[_0x1341c4[_0x579795(0xa5)]]['token'],_0x4d3ac9=newFolderColorInput['value'],_0x444459=btoa(JSON['stringify']({'icon':selectedFolderIcon,'color':_0x4d3ac9,'createdAt':new Date()['toISOString']()}));await githubApi(_0x579795(0x10f)+_0x1341c4[_0x579795(0x93)]+'/'+_0x1341c4[_0x579795(0xb6)]+_0x579795(0x119)+_0x4c493d,_0x579795(0x15d),{'message':_0x579795(0x86)+_0x500e68,'content':_0x444459},_0x5a0a88),showToast(_0x579795(0x186)+_0x500e68+_0x579795(0x1b8),_0x579795(0x73)),hideModal(_0x579795(0x115)),await refreshFileList();}catch(_0x27bb40){showToast(_0x579795(0x18e)+_0x27bb40['message'],_0x579795(0x1df));}finally{confirmFolderCreationBtn[_0x579795(0x114)]=![],confirmFolderCreationBtn['textContent']=_0x579795(0x1a3);}};function updateShareProgressBar(_0x4c91e4){const _0x4cc6e1=_0x4cf923;progressBar['style'][_0x4cc6e1(0x1f5)]=_0x4c91e4+'%';}function*generateChunks(_0x3d6166){const _0x2c506f=_0x4cf923;let _0x234496=0x0;while(_0x234496<_0x3d6166[_0x2c506f(0x95)]){yield _0x3d6166['slice'](_0x234496,_0x234496+CHUNK_SIZE),_0x234496+=CHUNK_SIZE;}}function chunkToBase64(_0x444b92){return new Promise(_0x5e5efa=>{const _0x30f7d2=_0x4e52,_0x41a5a7=new FileReader();_0x41a5a7[_0x30f7d2(0x1fa)]=()=>_0x5e5efa(_0x41a5a7[_0x30f7d2(0x1ab)]),_0x41a5a7[_0x30f7d2(0x1d8)](_0x444b92);});}shareModeToggle[_0x4cf923(0x155)]('click',_0x192294=>{const _0x4f22f5=_0x4cf923,_0x5f156b=_0x192294[_0x4f22f5(0x1cd)][_0x4f22f5(0x197)](_0x4f22f5(0x121));if(_0x5f156b&&!_0x5f156b['classList'][_0x4f22f5(0x1e7)]('active')){shareModeToggle[_0x4f22f5(0x1ed)](_0x4f22f5(0x78))[_0x4f22f5(0xd4)](_0x15213a=>_0x15213a['classList'][_0x4f22f5(0xe1)]('active')),_0x5f156b[_0x4f22f5(0x1ad)][_0x4f22f5(0x129)](_0x4f22f5(0xb8));const _0x142f0f=_0x5f156b['dataset'][_0x4f22f5(0x142)]==='send';shareSendMode[_0x4f22f5(0x162)]['display']=_0x142f0f?_0x4f22f5(0x9d):_0x4f22f5(0xd9),shareInboxMode[_0x4f22f5(0x162)][_0x4f22f5(0x1e2)]=_0x142f0f?_0x4f22f5(0xd9):_0x4f22f5(0x9d);}}),sendButton[_0x4cf923(0x175)]=async function(){const _0x28da7e=_0x4cf923,_0x2d927c=receiverEmailInput[_0x28da7e(0x1bb)];if(!fileToShare||!_0x2d927c){showToast(_0x28da7e(0x16f),_0x28da7e(0x1df));return;}sendButton[_0x28da7e(0x114)]=!![],sendButton[_0x28da7e(0x116)]=_0x28da7e(0x8b),progressContainer['style'][_0x28da7e(0x1e2)]=_0x28da7e(0x9d);let _0xe3051c;try{if(fileToShare['source']==='vault'){showToast(_0x28da7e(0xea));const _0x21d245=await fetchAndDecryptFile(fileToShare[_0x28da7e(0x106)]),_0x498ea1=await fetch(_0x21d245),_0x29848d=await _0x498ea1[_0x28da7e(0x12f)]();_0xe3051c=new File([_0x29848d],fileToShare[_0x28da7e(0x106)][_0x28da7e(0xb6)],{'type':_0x29848d['type']});}else _0xe3051c=fileToShare[_0x28da7e(0x185)];const _0x1aafe0=await get(ref(database,_0x28da7e(0x9b))),_0x4c3b62=_0x1aafe0[_0x28da7e(0x1e1)](),_0x909f0b=Object['keys'](_0x4c3b62)[_0x28da7e(0x14a)](_0x452bd2=>_0x4c3b62[_0x452bd2]['email']===_0x2d927c);if(!_0x909f0b)throw new Error('Receiver\x20not\x20found');const _0x10ca24=push(ref(database,'files/'+_0x909f0b)),_0x2c7bb9=_0x10ca24[_0x28da7e(0x182)],_0x315ebd=Math[_0x28da7e(0x1fe)](_0xe3051c[_0x28da7e(0x95)]/CHUNK_SIZE);await set(_0x10ca24,{'name':_0xe3051c['name'],'type':_0xe3051c[_0x28da7e(0x11c)],'size':_0xe3051c[_0x28da7e(0x95)],'sender':auth[_0x28da7e(0x1b7)][_0x28da7e(0x1bd)],'status':_0x28da7e(0x130),'totalChunks':_0x315ebd});let _0x4d6329=0x0;for(const _0x280fad of generateChunks(_0xe3051c)){const _0x1f3608=await chunkToBase64(_0x280fad);await set(ref(database,_0x28da7e(0xe8)+_0x909f0b+'/'+_0x2c7bb9+'/'+_0x4d6329),{'data':_0x1f3608}),_0x4d6329++,updateShareProgressBar(_0x4d6329/_0x315ebd*0x64);}await update(_0x10ca24,{'status':'ready-for-download'}),showToast(_0x28da7e(0x6d),_0x28da7e(0x73)),clearFileSelection(),receiverEmailInput[_0x28da7e(0x1bb)]='';}catch(_0x362197){showToast(_0x362197['message']||_0x28da7e(0xde),_0x28da7e(0x1df));}finally{sendButton[_0x28da7e(0x114)]=![],sendButton[_0x28da7e(0x116)]=_0x28da7e(0xdf),progressContainer[_0x28da7e(0x162)][_0x28da7e(0x1e2)]=_0x28da7e(0xd9),updateShareProgressBar(0x0);}};function setupFileListeners(_0x392f79){const _0x5629ab=_0x4cf923;onValue(ref(database,'files/'+_0x392f79[_0x5629ab(0x1b3)]),_0x45b8b5=>{const _0x36d856=_0x5629ab;incomingFilesDiv[_0x36d856(0x116)]='';if(!_0x45b8b5['exists']()){incomingFilesDiv[_0x36d856(0x116)]='<li\x20class=\x22file-item\x22><div\x20class=\x22file-details\x22><div\x20class=\x22file-name\x22>Your\x20inbox\x20is\x20empty.</div></div></li>';return;}_0x45b8b5[_0x36d856(0xd4)](_0x8e328a=>{const _0x382c99=_0x36d856,_0x4af202=_0x8e328a['key'],_0x29a7d6=_0x8e328a[_0x382c99(0x1e1)]();if(_0x29a7d6[_0x382c99(0x1dc)]===_0x382c99(0x80)){const _0x39037e=document[_0x382c99(0xb2)]('li');_0x39037e[_0x382c99(0x1ca)]=_0x382c99(0x9c),_0x39037e[_0x382c99(0x116)]=_0x382c99(0x1fc)+getFileIcon(_0x29a7d6[_0x382c99(0xb6)])+'\x22></i></div><div\x20class=\x22file-details\x22><div\x20class=\x22file-name\x22>'+_0x29a7d6[_0x382c99(0xb6)]+_0x382c99(0xd6)+_0x29a7d6[_0x382c99(0xee)]+'</div></div><div\x20class=\x22incoming-file-actions\x22><button\x20onclick=\x22window.acceptFile(\x27'+_0x4af202+_0x382c99(0xf4)+_0x4af202+'\x27)\x22\x20class=\x22reject-btn\x22><i\x20class=\x22fa-solid\x20fa-xmark\x22></i></button></div>',incomingFilesDiv[_0x382c99(0xd8)](_0x39037e);}});});}window[_0x4cf923(0x1c3)]=async function(_0x14c42d){const _0x4b53a6=_0x4cf923,_0x187a40=auth[_0x4b53a6(0x1b7)],_0x42709d=(await get(ref(database,_0x4b53a6(0x125)+_0x187a40[_0x4b53a6(0x1b3)]+'/'+_0x14c42d)))[_0x4b53a6(0x1e1)]();if(!_0x42709d)return;showToast(_0x4b53a6(0x13e)+_0x42709d[_0x4b53a6(0xb6)]+_0x4b53a6(0x181),'info');try{const _0xbde35f=[];for(let _0x41f3e5=0x0;_0x41f3e5<_0x42709d['totalChunks'];_0x41f3e5++){const _0x4a9ae9=await get(ref(database,_0x4b53a6(0xe8)+_0x187a40[_0x4b53a6(0x1b3)]+'/'+_0x14c42d+'/'+_0x41f3e5)),_0x549075=_0x4a9ae9[_0x4b53a6(0x1e1)]();if(_0x549075&&_0x549075['data']){const _0x3c55a4=_0x549075[_0x4b53a6(0x106)]['split'](',')[0x1],_0xadb6f9=atob(_0x3c55a4),_0x3125e4=new Uint8Array(_0xadb6f9[_0x4b53a6(0x189)]);for(let _0x343a44=0x0;_0x343a44<_0xadb6f9[_0x4b53a6(0x189)];_0x343a44++)_0x3125e4[_0x343a44]=_0xadb6f9['charCodeAt'](_0x343a44);_0xbde35f['push'](_0x3125e4);}}const _0xb21470=new Blob(_0xbde35f,{'type':_0x42709d[_0x4b53a6(0x11c)]}),_0x29b86c=document[_0x4b53a6(0xb2)]('a');_0x29b86c['href']=URL[_0x4b53a6(0x19b)](_0xb21470),_0x29b86c[_0x4b53a6(0x157)]=_0x42709d['name'],_0x29b86c[_0x4b53a6(0xc0)](),URL['revokeObjectURL'](_0x29b86c[_0x4b53a6(0x1ae)]),await remove(ref(database,_0x4b53a6(0xe8)+_0x187a40[_0x4b53a6(0x1b3)]+'/'+_0x14c42d)),await remove(ref(database,_0x4b53a6(0x125)+_0x187a40['uid']+'/'+_0x14c42d)),showToast('Download\x20complete!',_0x4b53a6(0x73));}catch(_0x413070){showToast(_0x4b53a6(0x9e),'error');}},window[_0x4cf923(0x70)]=async function(_0x49882c){const _0x339a8f=_0x4cf923,_0x542799=auth['currentUser'];await remove(ref(database,'fileChunks/'+_0x542799['uid']+'/'+_0x49882c)),await remove(ref(database,_0x339a8f(0x125)+_0x542799[_0x339a8f(0x1b3)]+'/'+_0x49882c)),showToast(_0x339a8f(0x195),_0x339a8f(0x1ef));},selectFromVaultBtn[_0x4cf923(0x175)]=async()=>{const _0x130b67=_0x4cf923;vaultFileListForSharing[_0x130b67(0x116)]='<li\x20class=\x22file-item\x22><div\x20class=\x22file-details\x22><div\x20class=\x22file-name\x22>Loading\x20vault\x20files...</div></div></li>',showModal('vaultSelectModal');const _0x33b61f=await getAllFilesForStats();vaultFileListForSharing['innerHTML']='';if(_0x33b61f[_0x130b67(0x189)]===0x0){vaultFileListForSharing[_0x130b67(0x116)]=_0x130b67(0x1da);return;}_0x33b61f[_0x130b67(0xd4)](_0x4008de=>{const _0x38f976=_0x130b67,_0x1c3f91=document[_0x38f976(0xb2)]('li');_0x1c3f91[_0x38f976(0x1ca)]='file-item',_0x1c3f91[_0x38f976(0x162)][_0x38f976(0x126)]=_0x38f976(0x18b),Object[_0x38f976(0xbe)](_0x4008de)[_0x38f976(0xd4)](_0x3ea733=>_0x1c3f91['dataset'][_0x3ea733]=_0x4008de[_0x3ea733]),_0x1c3f91['innerHTML']=_0x38f976(0x1fc)+getFileIcon(_0x4008de[_0x38f976(0xb6)])+_0x38f976(0x14f)+_0x4008de[_0x38f976(0xb6)]+_0x38f976(0x7c)+formatBytes(_0x4008de[_0x38f976(0x95)])+_0x38f976(0x190),_0x1c3f91[_0x38f976(0x175)]=()=>{const _0x470743=_0x38f976;fileToShare={'source':_0x470743(0x14d),'data':_0x1c3f91[_0x470743(0xff)]},updateSelectedFileUI(_0x1c3f91['dataset']['name']),hideModal(_0x470743(0x17a));},vaultFileListForSharing[_0x38f976(0xd8)](_0x1c3f91);});},document[_0x4cf923(0x178)](_0x4cf923(0x1c5))['onclick']=()=>hideModal(_0x4cf923(0x17a)),vaultSelectModal[_0x4cf923(0x175)]=_0x23cf81=>{const _0x1b3964=_0x4cf923;if(_0x23cf81[_0x1b3964(0x1cd)]===_0x23cf81[_0x1b3964(0x1c7)])hideModal(_0x1b3964(0x17a));};const updateSelectedFileUI=_0x28e252=>{const _0x585b0d=_0x4cf923;selectedFileName['textContent']=_0x28e252,selectedShareFileDisplay[_0x585b0d(0x162)][_0x585b0d(0x1e2)]=_0x585b0d(0x137),shareFileInput[_0x585b0d(0x1bb)]='';},clearFileSelection=()=>{const _0x85a132=_0x4cf923;fileToShare=null,selectedShareFileDisplay['style'][_0x85a132(0x1e2)]='none',shareFileInput[_0x85a132(0x1bb)]='';};clearSelectionBtn[_0x4cf923(0x175)]=clearFileSelection,shareFileInput['addEventListener'](_0x4cf923(0x135),()=>{const _0x4fc9b3=_0x4cf923;shareFileInput[_0x4fc9b3(0x1c4)][_0x4fc9b3(0x189)]>0x0&&(fileToShare={'source':_0x4fc9b3(0x1b4),'file':shareFileInput[_0x4fc9b3(0x1c4)][0x0]},updateSelectedFileUI(fileToShare['file'][_0x4fc9b3(0xb6)]));});const dropZone=document['querySelector'](_0x4cf923(0x85));dropZone[_0x4cf923(0x155)](_0x4cf923(0x94),_0x52cd42=>{const _0x1b7ee1=_0x4cf923;_0x52cd42[_0x1b7ee1(0xfe)](),_0x52cd42['stopPropagation'](),dropZone['style'][_0x1b7ee1(0x1d3)]=_0x1b7ee1(0x7b);}),dropZone[_0x4cf923(0x155)](_0x4cf923(0x10b),_0x48a782=>{_0x48a782['preventDefault'](),_0x48a782['stopPropagation']();}),dropZone[_0x4cf923(0x155)]('dragleave',_0xf88449=>{const _0x57cc36=_0x4cf923;_0xf88449[_0x57cc36(0xfe)](),_0xf88449[_0x57cc36(0x1a2)](),dropZone['style'][_0x57cc36(0x1d3)]=_0x57cc36(0x17c);}),dropZone[_0x4cf923(0x155)]('drop',_0x396d92=>{const _0x41d5c8=_0x4cf923;_0x396d92[_0x41d5c8(0xfe)](),_0x396d92[_0x41d5c8(0x1a2)](),dropZone[_0x41d5c8(0x162)][_0x41d5c8(0x1d3)]=_0x41d5c8(0x17c),_0x396d92['dataTransfer'][_0x41d5c8(0x1c4)][_0x41d5c8(0x189)]>0x0&&(shareFileInput[_0x41d5c8(0x1c4)]=_0x396d92['dataTransfer'][_0x41d5c8(0x1c4)],fileToShare={'source':_0x41d5c8(0x1b4),'file':shareFileInput['files'][0x0]},updateSelectedFileUI(fileToShare[_0x41d5c8(0x185)][_0x41d5c8(0xb6)]),showToast(_0x396d92[_0x41d5c8(0xce)][_0x41d5c8(0x1c4)]['length']+_0x41d5c8(0x1a6),_0x41d5c8(0x1ef)));});
+    </script>
+</body>
+</html>
